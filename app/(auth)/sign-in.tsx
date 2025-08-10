@@ -1,128 +1,127 @@
 // app/(auth)/sign-in.tsx
 import { useSignIn } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
-import {
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  StyleSheet,
-} from 'react-native'
+import { Text, View, ActivityIndicator, TextInput } from 'react-native'
 import React from 'react'
+import Button from '@/components/Button'
+import OAuthButton from '@/components/OAuthButton'
+import MaterialCommunityIcons from '@expo/vector-icons/build/MaterialCommunityIcons'
+import { ThemedText } from '@/components/ThemedText'
+import { ThemedView } from '@/components/ThemedView'
+import { styles } from "@/constants/styles"
+import { Ionicons } from '@expo/vector-icons'
 
-export default function Page() {
+export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn()
   const router = useRouter()
 
   const [emailAddress, setEmailAddress] = React.useState('')
   const [password, setPassword] = React.useState('')
 
-  const onSignInPress = async () => {
-    if (!isLoaded) return
+  const onSignInPress = React.useCallback(async () => {
+    if (!isLoaded) {
+      return
+    }
+
     try {
       const signInAttempt = await signIn.create({
         identifier: emailAddress,
         password,
       })
+
       if (signInAttempt.status === 'complete') {
-        await setActive({ session: signInAttempt.createdSessionId })
+        await setActive({
+          session: signInAttempt.createdSessionId
+        })
+
         router.replace('/')
       } else {
         console.error(JSON.stringify(signInAttempt, null, 2))
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(JSON.stringify(err, null, 2))
     }
+  }, [isLoaded, emailAddress, password])
+
+  if(!isLoaded) {
+    return <ActivityIndicator size="large" />
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Sign in</Text>
+    <View style={styles.authScreen}>
+      <View style={styles.authForm}>
 
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={emailAddress}
-        placeholder="Enter email"
-        placeholderTextColor="#888"
-        onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
-      />
-      <TextInput
-        style={styles.input}
-        value={password}
-        placeholder="Enter password"
-        placeholderTextColor="#888"
-        secureTextEntry={true}
-        onChangeText={(password) => setPassword(password)}
-      />
+        {/* Header text */}
+        <ThemedView style={{ marginVertical: 16, alignItems: "center" }}>
+          <ThemedText type='title'>
+            Sign in
+          </ThemedText>
+          <ThemedText type='default'>
+            Welcome back! Please sign in to continue
+          </ThemedText>
+        </ThemedView>
 
-      <TouchableOpacity style={styles.button} onPress={onSignInPress}>
-        <Text style={styles.buttonText}>Continue</Text>
-      </TouchableOpacity>
+        {/* OAuth buttons */}
+        <View style={{
+          display: "flex",
+          flexDirection: "row",
+          gap: 8
+        }}>
+          <View style={{ flex: 1 }}>
+            <OAuthButton strategy="oauth_google">
+              <MaterialCommunityIcons name="google" size={18} />{" "}
+              Google
+            </OAuthButton>
+          </View>
+        </View>
 
-      <View style={styles.linkContainer}>
-        <Text style={styles.infoText}>Don't have an account?</Text>
-        <Link href="/(auth)/sign-up">
-          <Text style={styles.linkText}>Sign up</Text>
-        </Link>
+        {/* Form separator */}
+        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+          <View>
+            <Text style={{width: 50, textAlign: 'center', color: "#555"}}>or</Text>
+          </View>
+          <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
+        </View>
+
+        {/* Input fields */}
+        <View style={{ gap: 8, marginBottom: 24 }}>
+          <Text>Email address</Text>
+          <TextInput
+            style={styles.input}
+            autoCapitalize="none"
+            value={emailAddress}
+            onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
+          />
+          <Text>Password</Text>
+          <TextInput
+            style={styles.input}
+            value={password}
+            secureTextEntry={true}
+            onChangeText={(password) => setPassword(password)}
+          />
+        </View>
+
+        {/* Sign in button */}
+        <Button onPress={onSignInPress}>
+          <Text>Sign in</Text> <Ionicons name='caret-forward' />
+        </Button>
+
+        {/* Suggest new users create an account */}
+        <View style={{
+          display: "flex",
+          flexDirection: "row",
+          gap: 4,
+          justifyContent: "center",
+          marginVertical: 18
+        }}>
+          <Text>Don't have an account?</Text>
+          <Link href="/sign-up">
+            <Text style={{ fontWeight: "bold" }}>Sign up</Text>
+          </Link>
+        </View>
+
       </View>
     </View>
   )
 }
-
-// Re-usable styles for auth forms
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: '#fff',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 24,
-    textAlign: 'center',
-    color: '#333',
-  },
-  input: {
-    height: 50,
-    width: '100%',
-    borderColor: '#ccc',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  button: {
-    height: 50,
-    width: '100%',
-    backgroundColor: '#007BFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  linkContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 24,
-    gap: 5,
-  },
-  infoText: {
-    fontSize: 16,
-    color: '#555',
-  },
-  linkText: {
-    fontSize: 16,
-    color: '#007BFF',
-    fontWeight: '500',
-  },
-})
