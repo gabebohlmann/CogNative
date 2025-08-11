@@ -8,6 +8,7 @@ import { useAuth, useUser } from '@clerk/clerk-expo';
 import Button from '@/components/Button';
 import CardSettings from '@/components/CardSettings'
 import { View } from 'react-native'
+import { ScrollView } from 'react-native-gesture-handler';
 
 export default function SettingsScreen() {
   const { user } = useUser()
@@ -23,7 +24,7 @@ export default function SettingsScreen() {
     // <ParallaxScrollView
     //   headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
     //   headerImage={<Ionicons size={310} name="cog" style={styles.headerImage} />}>
-    <View>
+    <ScrollView>
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="title">Settings</ThemedText>
         <ThemedText type="defaultSemiBold">
@@ -32,7 +33,7 @@ export default function SettingsScreen() {
       </ThemedView>
       <CardSettings />
       <Button onPress={onSignOutPress}>Sign out</Button>
-    </View>
+    </ScrollView>
     // </ParallaxScrollView>
   );
 }

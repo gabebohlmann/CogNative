@@ -13,11 +13,17 @@ import {
   useColorScheme,
   View,
   Text as RNText,
-  Pressable, // Import Pressable for the ref type
+  Pressable,
+  TouchableOpacity, // Import TouchableOpacity for buttons
 } from "react-native";
 import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { GradedWord } from "./GradedWord";
+
+// --- Constants for font size control ---
+const MIN_FONT_SIZE = 14;
+const MAX_FONT_SIZE = 36;
+const DEFAULT_FONT_SIZE = 20;
 
 export default function ReadingScreen() {
   const colorScheme = useColorScheme();
@@ -37,13 +43,14 @@ export default function ReadingScreen() {
     [key: string]: string;
   }>({});
   const [isPrefetching, setIsPrefetching] = useState(true);
+  // --- State for dynamic font size ---
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
 
   const lastGradedWordRef = useRef<{
     word: string;
     rating: string;
     key: string;
   } | null>(null);
-  // This ref will now correctly store references to the Pressable elements
   const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
 
   const story = useQuery(api.stories.getFirstStory);
@@ -127,7 +134,7 @@ export default function ReadingScreen() {
             visible: true,
             text: translation,
             x: centerX,
-            y: py - height - 25,
+            y: py - height - 15,
           });
         });
       }
@@ -135,7 +142,17 @@ export default function ReadingScreen() {
     [submitLastWordGrade, translationCache]
   );
 
-  const styles = getStyles(colorScheme);
+  // --- Functions to handle zooming ---
+  const zoomIn = useCallback(() => {
+    setFontSize((prevSize) => Math.min(prevSize + 2, MAX_FONT_SIZE));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setFontSize((prevSize) => Math.max(prevSize - 2, MIN_FONT_SIZE));
+  }, []);
+
+  // Pass dynamic font size to styles
+  const styles = getStyles(colorScheme, fontSize);
 
   if (!story || isPrefetching) {
     return <ActivityIndicator style={styles.loading} size="large" />;
@@ -147,6 +164,7 @@ export default function ReadingScreen() {
         onScrollBeginDrag={submitLastWordGrade}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContentContainer}
       >
         <RNText style={styles.title}>{story.title}</RNText>
         <View style={styles.contentContainer}>
@@ -166,13 +184,32 @@ export default function ReadingScreen() {
                   cleanedWord={cleanedWord}
                   wordKey={segmentKey}
                   onPressWord={handleWordPressParent}
+                  fontSize={fontSize} // Pass font size down
                 />
               );
             }
-            return <RNText key={index}>{segment}</RNText>;
+            // Apply dynamic font size to non-word segments
+            return (
+              <RNText
+                key={index}
+                style={{ fontSize, color: styles.contentContainer.color }}
+              >
+                {segment}
+              </RNText>
+            );
           })}
         </View>
       </ScrollView>
+
+      {/* --- Zoom Controls UI --- */}
+      <View style={styles.zoomControls}>
+        <TouchableOpacity onPress={zoomOut} style={styles.zoomButton}>
+          <RNText style={styles.zoomButtonText}>A-</RNText>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={zoomIn} style={styles.zoomButton}>
+          <RNText style={styles.zoomButtonText}>A+</RNText>
+        </TouchableOpacity>
+      </View>
 
       {popup.visible && (
         <View
@@ -186,11 +223,20 @@ export default function ReadingScreen() {
   );
 }
 
-const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
+// Update getStyles to accept fontSize
+const getStyles = (
+  colorScheme: "light" | "dark" | null | undefined,
+  fontSize: number
+) => {
   const isDark = colorScheme === "dark";
   const backgroundColor = isDark ? "#121212" : "#FFFFFF";
   const textColor = isDark ? "#FFFFFF" : "#000000";
-  const popupBgColor = isDark ? "#424242" : "#333333";
+  const popupBgColor = isDark
+    ? "rgba(50, 50, 50, 0.9)"
+    : "rgba(30, 30, 30, 0.9)";
+  const controlBgColor = isDark
+    ? "rgba(50, 50, 50, 0.8)"
+    : "rgba(240, 240, 240, 0.8)";
 
   return StyleSheet.create({
     loading: {
@@ -199,7 +245,7 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       alignItems: "center",
       backgroundColor: backgroundColor,
     },
-    container: { flex: 1, padding: 15, backgroundColor: backgroundColor },
+    scrollContentContainer: { padding: 15, paddingBottom: 80 }, // Add padding to bottom for zoom controls
     title: {
       fontSize: 28,
       fontWeight: "bold",
@@ -209,8 +255,7 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     contentContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
-      fontSize: 20,
-      lineHeight: 40,
+      lineHeight: fontSize * 1.7, // Dynamic line height
       color: textColor,
     },
     popup: {
@@ -230,8 +275,31 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     },
     popupText: {
       color: "#fff",
-      fontSize: 16,
+      fontSize: fontSize,
       textAlign: "center",
+    },
+    // --- Styles for Zoom Controls ---
+    zoomControls: {
+      position: "absolute",
+      top: 10,
+      right: 20,
+      flexDirection: "row",
+      backgroundColor: controlBgColor,
+      borderRadius: 25,
+      padding: 2,
+    },
+    zoomButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      justifyContent: "center",
+      alignItems: "center",
+      marginHorizontal: 5,
+    },
+    zoomButtonText: {
+      fontSize: 18,
+      fontWeight: "bold",
+      color: textColor,
     },
   });
 };

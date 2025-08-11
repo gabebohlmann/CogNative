@@ -1,15 +1,16 @@
 // app/(tabs)/reading.tsx
 // app/(tabs)/index.tsx
-import { ActivityIndicator, Image, StyleSheet } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet } from "react-native";
 
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedView } from '@/components/ThemedView';
-import React from 'react';
+import ParallaxScrollView from "@/components/ParallaxScrollView";
+import { ThemedView } from "@/components/ThemedView";
+import React from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Button from "@/components/Button";
-import { router } from 'expo-router';
+import { router } from "expo-router";
 import Flashcard from "@/components/Flashcard";
 import ReadingScreen from "@/components/ReadingScreen";
+import { ScrollView } from "react-native-gesture-handler";
 
 export default function ReadingTabScreen() {
   return (
@@ -22,9 +23,11 @@ export default function ReadingTabScreen() {
     //     />
     //   }>
 
-      <ThemedView style={styles.stepContainer}>
-        <ReadingScreen />
-      </ThemedView>
+    // <ThemedView style={styles.stepContainer}>
+    <ScrollView style={styles.stepContainer}>
+      <ReadingScreen />
+    </ScrollView>
+    // </ThemedView>
 
     // </ParallaxScrollView>
   );
@@ -32,8 +35,8 @@ export default function ReadingTabScreen() {
 
 const styles = StyleSheet.create({
   titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   stepContainer: {
@@ -45,6 +48,6 @@ const styles = StyleSheet.create({
     width: 290,
     bottom: 0,
     left: 0,
-    position: 'absolute',
+    position: "absolute",
   },
 });
