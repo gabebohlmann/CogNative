@@ -1,12 +1,6 @@
 // components/GradedWord.tsx
-import React, { useState, useCallback } from "react";
-import {
-  Pressable,
-  Text,
-  useColorScheme,
-  NativeSyntheticEvent,
-  NativeTouchEvent,
-} from "react-native";
+import React, { useState, useCallback, forwardRef } from "react";
+import { Pressable, Text, useColorScheme } from "react-native";
 
 const GRADE_COLORS = {
   again: "#dc3545",
@@ -21,23 +15,20 @@ interface GradedWordProps {
   word: string;
   cleanedWord: string;
   wordKey: string;
-  // --- FIX: The prop is updated to pass the full event object ---
-  onPressWord: (
-    event: NativeSyntheticEvent<NativeTouchEvent>,
-    word: string,
-    rating: string,
-    wordKey: string
-  ) => void;
+  // The event object is no longer needed
+  onPressWord: (word: string, rating: string, wordKey: string) => void;
 }
 
+// --- FIX: Wrap the component in forwardRef to accept a ref from the parent ---
 export const GradedWord = React.memo(
-  ({ word, cleanedWord, wordKey, onPressWord }: GradedWordProps) => {
-    const [grade, setGrade] = useState<GradeKey>("default");
-    const colorScheme = useColorScheme();
-    const defaultTextColor = colorScheme === "dark" ? "#FFF" : "#000";
+  forwardRef<Pressable, GradedWordProps>(
+    ({ word, cleanedWord, wordKey, onPressWord }, ref) => {
+      const [grade, setGrade] = useState<GradeKey>("default");
+      const colorScheme = useColorScheme();
+      const defaultTextColor = colorScheme === "dark" ? "#FFF" : "#000";
 
-    const handlePress = useCallback(
-      (event: NativeSyntheticEvent<NativeTouchEvent>) => {
+      const handlePress = useCallback(() => {
+        // This function no longer receives the event object
         const currentIndex =
           grade === "default" ? -1 : GRADING_CYCLE.indexOf(grade);
         const nextGrade =
@@ -45,18 +36,18 @@ export const GradedWord = React.memo(
 
         setGrade(nextGrade);
 
-        // --- FIX: Pass the event object along with other details ---
-        onPressWord(event, cleanedWord, nextGrade, wordKey);
-      },
-      [grade, cleanedWord, wordKey, onPressWord]
-    );
+        // Pass details up to the parent
+        onPressWord(cleanedWord, nextGrade, wordKey);
+      }, [grade, cleanedWord, wordKey, onPressWord]);
 
-    const targetColor = GRADE_COLORS[grade] || defaultTextColor;
+      const targetColor = GRADE_COLORS[grade] || defaultTextColor;
 
-    return (
-      <Pressable onPress={handlePress}>
-        <Text style={{ color: targetColor }}>{word}</Text>
-      </Pressable>
-    );
-  }
+      return (
+        // --- FIX: Attach the forwarded ref to the Pressable element ---
+        <Pressable ref={ref} onPress={handlePress}>
+          <Text style={{ color: targetColor }}>{word}</Text>
+        </Pressable>
+      );
+    }
+  )
 );

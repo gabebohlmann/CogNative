@@ -8,24 +8,16 @@ import React, {
 } from "react";
 import {
   StyleSheet,
+  ScrollView,
   ActivityIndicator,
   useColorScheme,
   View,
   Text as RNText,
-  NativeSyntheticEvent,
-  NativeTouchEvent,
+  Pressable, // Import Pressable for the ref type
 } from "react-native";
 import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { GradedWord } from "./GradedWord";
-// --- FIX: Import FlashList for virtualization ---
-import { FlashList } from "@shopify/flash-list";
-
-// A type for a line of text, which contains multiple word/space segments
-type LineItem = {
-  id: string;
-  segments: { type: "word" | "space"; content: string; key: string }[];
-};
 
 export default function ReadingScreen() {
   const colorScheme = useColorScheme();
@@ -51,41 +43,15 @@ export default function ReadingScreen() {
     rating: string;
     key: string;
   } | null>(null);
+  // This ref will now correctly store references to the Pressable elements
+  const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
 
   const story = useQuery(api.stories.getFirstStory);
   const gradeWord = useMutation(api.userWords.gradeWord);
 
-  // --- FIX: Process the story into lines for FlashList ---
-  const storyLines = useMemo(() => {
+  const storySegments = useMemo(() => {
     if (!story) return [];
-    const lines: LineItem[] = [];
-    let currentLine: LineItem["segments"] = [];
-    let segmentCounter = 0;
-
-    story.content.split(/(\n)/).forEach((lineText, lineIndex) => {
-      if (lineText === "\n") {
-        if (currentLine.length > 0) {
-          lines.push({ id: `line-${lineIndex}`, segments: currentLine });
-          currentLine = [];
-        }
-      } else {
-        lineText.split(/(\s+|[.,!?;"'’“”])/).forEach((segment) => {
-          if (segment) {
-            currentLine.push({
-              type: /^[a-zĉĝĥĵŝŭ'’]+$/.test(segment.trim().toLowerCase())
-                ? "word"
-                : "space",
-              content: segment,
-              key: `seg-${segmentCounter++}`,
-            });
-          }
-        });
-      }
-    });
-    if (currentLine.length > 0) {
-      lines.push({ id: `line-last`, segments: currentLine });
-    }
-    return lines;
+    return story.content.split(/(\s+|[.,!?;"'’“”])/);
   }, [story]);
 
   useEffect(() => {
@@ -139,12 +105,7 @@ export default function ReadingScreen() {
   }, [gradeWord, hidePopup]);
 
   const handleWordPressParent = useCallback(
-    async (
-      event: NativeSyntheticEvent<NativeTouchEvent>,
-      word: string,
-      rating: string,
-      wordKey: string
-    ) => {
+    async (word: string, rating: string, wordKey: string) => {
       if (
         lastGradedWordRef.current &&
         lastGradedWordRef.current.key !== wordKey
@@ -159,8 +120,16 @@ export default function ReadingScreen() {
       }
 
       if (translation) {
-        const { pageX, pageY } = event.nativeEvent;
-        setPopup({ visible: true, text: translation, x: pageX, y: pageY - 45 });
+        const targetWord = wordRefs.current[wordKey];
+        targetWord?.measure((fx, fy, width, height, px, py) => {
+          const centerX = px + width / 2;
+          setPopup({
+            visible: true,
+            text: translation,
+            x: centerX,
+            y: py - height - 25,
+          });
+        });
       }
     },
     [submitLastWordGrade, translationCache]
@@ -168,44 +137,42 @@ export default function ReadingScreen() {
 
   const styles = getStyles(colorScheme);
 
-  // --- FIX: renderItem function for FlashList ---
-  const renderLine = useCallback(
-    ({ item }: { item: LineItem }) => (
-      <View style={styles.lineContainer}>
-        {item.segments.map((segment) => {
-          if (segment.type === "word") {
-            return (
-              <GradedWord
-                key={segment.key}
-                word={segment.content}
-                cleanedWord={segment.content.trim().toLowerCase()}
-                wordKey={segment.key}
-                onPressWord={handleWordPressParent}
-              />
-            );
-          }
-          return <RNText key={segment.key}>{segment.content}</RNText>;
-        })}
-      </View>
-    ),
-    [handleWordPressParent]
-  );
-
   if (!story || isPrefetching) {
     return <ActivityIndicator style={styles.loading} size="large" />;
   }
 
   return (
     <View style={{ flex: 1 }}>
-      <RNText style={styles.title}>{story.title}</RNText>
-      {/* --- FIX: Use FlashList instead of ScrollView --- */}
-      <FlashList
-        data={storyLines}
-        renderItem={renderLine}
-        estimatedItemSize={40} // Adjust based on your average line height
+      <ScrollView
         onScrollBeginDrag={submitLastWordGrade}
-        contentContainerStyle={styles.listContentContainer}
-      />
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+      >
+        <RNText style={styles.title}>{story.title}</RNText>
+        <View style={styles.contentContainer}>
+          {storySegments.map((segment, index) => {
+            const segmentKey = `seg-${index}`;
+            const cleanedWord = segment.trim().toLowerCase();
+
+            if (
+              cleanedWord.length > 0 &&
+              /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)
+            ) {
+              return (
+                <GradedWord
+                  key={segmentKey}
+                  ref={(el) => (wordRefs.current[segmentKey] = el as Pressable)}
+                  word={segment}
+                  cleanedWord={cleanedWord}
+                  wordKey={segmentKey}
+                  onPressWord={handleWordPressParent}
+                />
+              );
+            }
+            return <RNText key={index}>{segment}</RNText>;
+          })}
+        </View>
+      </ScrollView>
 
       {popup.visible && (
         <View
@@ -232,9 +199,14 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       alignItems: "center",
       backgroundColor: backgroundColor,
     },
-    title: { fontSize: 28, fontWeight: "bold", margin: 15, color: textColor },
-    listContentContainer: { paddingHorizontal: 15 },
-    lineContainer: {
+    container: { flex: 1, padding: 15, backgroundColor: backgroundColor },
+    title: {
+      fontSize: 28,
+      fontWeight: "bold",
+      marginBottom: 15,
+      color: textColor,
+    },
+    contentContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
       fontSize: 20,
@@ -254,7 +226,7 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       elevation: 5,
       maxWidth: 250,
       zIndex: 10,
-      transform: [{ translateX: -75 }],
+      transform: [{ translateX: "-50%" }],
     },
     popupText: {
       color: "#fff",

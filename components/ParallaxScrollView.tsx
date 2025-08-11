@@ -1,3 +1,4 @@
+// components/ParallaxScrollView.tsx
 import type { PropsWithChildren, ReactElement } from 'react';
 import { StyleSheet, useColorScheme } from 'react-native';
 import Animated, {

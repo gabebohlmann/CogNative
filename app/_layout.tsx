@@ -70,7 +70,6 @@ export default function RootLayout() {
 
   return (
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
-      {/* Wrap the app with the Convex/Clerk provider, using `useAuth` from Clerk for authentication */}
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <ClerkLoaded>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
