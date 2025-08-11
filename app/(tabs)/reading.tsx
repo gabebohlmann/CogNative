@@ -1,3 +1,4 @@
+// app/(tabs)/reading.tsx
 // app/(tabs)/index.tsx
 import { ActivityIndicator, Image, StyleSheet } from 'react-native';
 
@@ -8,8 +9,9 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Button from "@/components/Button";
 import { router } from 'expo-router';
 import Flashcard from "@/components/Flashcard";
+import ReadingScreen from "@/components/ReadingScreen";
 
-export default function HomeScreen() {
+export default function ReadingTabScreen() {
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -21,7 +23,7 @@ export default function HomeScreen() {
       }>
 
       <ThemedView style={styles.stepContainer}>
-        <Flashcard />
+        <ReadingScreen />
       </ThemedView>
 
     </ParallaxScrollView>

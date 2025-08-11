@@ -7,8 +7,9 @@
   import { ThemedView } from '@/components/ThemedView';
   import { useAuth, useUser } from '@clerk/clerk-expo';
   import Button from '@/components/Button';
+  import CardSettings from '@/components/CardSettings'
 
-  export default function Settings() {
+  export default function SettingsScreen() {
     const { user } = useUser()
     const { signOut } = useAuth();
 
@@ -26,6 +27,7 @@
             <ThemedText type="title">Settings</ThemedText>
             <ThemedText type="defaultSemiBold">Signed in as {user?.emailAddresses[0].emailAddress}.</ThemedText>
           </ThemedView>
+          <CardSettings />  
           <Button onPress={onSignOutPress}>
             Sign out
           </Button>

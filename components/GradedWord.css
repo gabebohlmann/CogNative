@@ -1,0 +1,34 @@
+/* components/GradedWord.css */
+.word-cycler {
+  font-size: 2.25rem; /* 36px */
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.2s ease-in-out;
+}
+
+.word-cycler.again {
+  color: #ef4444; /* red-500 */
+}
+
+.word-cycler.hard {
+  color: #f97316; /* orange-500 */
+}
+
+.word-cycler.easy {
+  color: #3b82f6; /* blue-500 */
+}
+
+.word-cycler.good {
+  /* Apply the animation */
+  animation: fade-to-default-color 1.5s ease-out forwards;
+}
+
+/* Define the animation keyframes */
+@keyframes fade-to-default-color {
+  from {
+    color: #22c55e; /* green-500 */
+  }
+  to {
+    color: inherit; /* This handles light/dark mode automatically */
+  }
+}

@@ -1,168 +1,116 @@
-import React from 'react'
-import { View, Text } from 'react-native'
-import { useSignUp } from '@clerk/clerk-expo'
-import { Link, useRouter } from 'expo-router'
-import { styles } from '@/constants/styles'
-import Button from '@/components/Button'
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
-import { ThemedView } from '@/components/ThemedView'
-import { ThemedText } from '@/components/ThemedText'
-import OAuthButton from '@/components/OAuthButton'
-import { TextInput } from 'react-native-gesture-handler'
-// --- Convex Imports ---
-import { useMutation } from 'convex/react'
-import { api } from '@/convex/_generated/api'
+import React, { useState } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSignUp } from '@clerk/clerk-expo';
+import { Link, useRouter } from 'expo-router';
+import { useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 
 export default function SignUpScreen() {
-  const { isLoaded, signUp, setActive } = useSignUp()
-  const router = useRouter()
+  const { isLoaded, signUp, setActive } = useSignUp();
+  const router = useRouter();
 
-  // --- Convex Mutation Hook ---
-  // Get the function to store the user in the database
+  // Re-introduce the useMutation hook for the 'store' function.
   const storeUser = useMutation(api.users.store);
 
-  const [emailAddress, setEmailAddress] = React.useState('')
-  const [password, setPassword] = React.useState('')
-  const [pendingVerification, setPendingVerification] = React.useState(false)
-  const [code, setCode] = React.useState('')
+  const [emailAddress, setEmailAddress] = useState('');
+  const [password, setPassword] = useState('');
+  const [pendingVerification, setPendingVerification] = useState(false);
+  const [code, setCode] = useState('');
 
   const onSignUpPress = async () => {
-    if (!isLoaded) {
-      return
-    }
-
+    if (!isLoaded) return;
     try {
-      await signUp.create({
-        emailAddress,
-        password,
-      })
-
-      await signUp.prepareEmailAddressVerification({
-        strategy: 'email_code'
-      })
-
-      setPendingVerification(true)
+      await signUp.create({ emailAddress, password });
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setPendingVerification(true);
     } catch (err: any) {
-      console.error(JSON.stringify(err, null, 2))
+      console.error(JSON.stringify(err, null, 2));
     }
-  }
+  };
 
   const onPressVerify = async () => {
-    if (!isLoaded) {
-      return
-    }
-
+    if (!isLoaded) return;
     try {
-      const completeSignUp = await signUp.attemptEmailAddressVerification({
-        code,
-      })
-
+      const completeSignUp = await signUp.attemptEmailAddressVerification({ code });
       if (completeSignUp.status === 'complete') {
-        await setActive({ session: completeSignUp.createdSessionId })
-        
-        // --- Store User in Convex ---
-        // After the user is created in Clerk and the session is active,
-        // create the user record in your Convex database.
+        await setActive({ session: completeSignUp.createdSessionId });
+
+        // This call now correctly uses the public 'store' mutation.
         await storeUser();
-        
-        router.replace('/')
+
+        router.replace('/');
       } else {
-        console.error(JSON.stringify(completeSignUp, null, 2))
+        console.error(JSON.stringify(completeSignUp, null, 2));
       }
     } catch (err: any) {
-      console.error(JSON.stringify(err, null, 2))
+      console.error(JSON.stringify(err, null, 2));
     }
-  }
+  };
 
   return (
-    <View style={styles.authScreen}>
-      <View style={styles.authForm}>
-        {!pendingVerification && (
-          <>
-            <ThemedView style={{ marginVertical: 16, alignItems: "center" }}>
-              <ThemedText type='title'>
-                Create your account
-              </ThemedText>
-              <ThemedText type='default'>
-                Welcome! Please fill in the details to get started.
-              </ThemedText>
-            </ThemedView>
-
-            <View style={{
-              display: "flex",
-              flexDirection: "row",
-              gap: 8
-            }}>
-              <View style={{ flex: 1 }}>
-                <OAuthButton strategy="oauth_google">
-                  <MaterialCommunityIcons name="google" size={18} />{" "}
-                  Google
-                </OAuthButton>
-              </View>
-              <View style={{ flex: 1 }}>
-                <OAuthButton strategy="oauth_github">
-                  <MaterialCommunityIcons name="github" size={18} />{" "}
-                  GitHub
-                </OAuthButton>
-              </View>
-            </View>
-
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
-              <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
-              <View>
-                <Text style={{width: 50, textAlign: 'center'}}>or</Text>
-              </View>
-              <View style={{flex: 1, height: 1, backgroundColor: '#eee'}} />
-            </View>
-
-            <Text>Email address</Text>
-            <TextInput
-              style={styles.input}
-              autoCapitalize="none"
-              value={emailAddress}
-              onChangeText={(email) => setEmailAddress(email)}
-            />
-            <Text>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              secureTextEntry={true}
-              onChangeText={(password) => setPassword(password)}
-            />
-            <Button onPress={onSignUpPress}>
-              <Text>Continue</Text> <Ionicons name='caret-forward' />
-            </Button>
-
-            <View style={{
-              display: "flex",
-              flexDirection: "row",
-              gap: 4,
-              justifyContent: "center",
-              marginVertical: 18
-            }}>
-              <Text>Already have an account?</Text>
-              <Link href="/sign-in">
-                <Text style={{ fontWeight: "bold" }}>Sign in</Text>
-              </Link>
-            </View>
-          </>
-        )}
-
-        {/* If the user has submitted credentials, render a verification form instead */}
-        {pendingVerification && (
-          <>
-            <TextInput
-              style={styles.input}
-              value={code}
-              placeholder="Code..."
-              onChangeText={(code) => setCode(code)} />
-            <Button onPress={onPressVerify}>
-              Verify code
-            </Button>
-          </>
-        )}
-
-      </View>
+    <View style={styles.container}>
+      {!pendingVerification ? (
+        <>
+          <TextInput
+            autoCapitalize="none"
+            value={emailAddress}
+            placeholder="Email..."
+            onChangeText={setEmailAddress}
+            style={styles.input}
+          />
+          <TextInput
+            value={password}
+            placeholder="Password..."
+            secureTextEntry
+            onChangeText={setPassword}
+            style={styles.input}
+          />
+          <TouchableOpacity onPress={onSignUpPress} style={styles.button}>
+            <Text style={styles.buttonText}>Create Account</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <TextInput
+            value={code}
+            placeholder="Code..."
+            onChangeText={setCode}
+            style={styles.input}
+          />
+          <TouchableOpacity onPress={onPressVerify} style={styles.button}>
+            <Text style={styles.buttonText}>Verify Email</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </View>
-  )
+  );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  input: {
+    marginVertical: 4,
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#6c47ff',
+    borderRadius: 4,
+    padding: 10,
+    backgroundColor: '#fff',
+  },
+  button: {
+    marginVertical: 4,
+    alignItems: 'center',
+    backgroundColor: '#6c47ff',
+    padding: 12,
+    borderRadius: 4,
+  },
+  buttonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+});
+        
