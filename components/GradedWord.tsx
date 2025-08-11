@@ -9,12 +9,11 @@ import {
 } from "react-native";
 
 const GRADE_COLORS = {
-  again: "#dc3545", // Red
-  hard: "#ffc107", // Orange
-  easy: "#17a2b8", // Blue
+  again: "#dc3545",
+  hard: "#ffc107",
+  easy: "#17a2b8",
 };
 
-// Define the cycle of grades
 const GRADING_CYCLE: GradeKey[] = ["again", "hard", "good", "easy"];
 type GradeKey = "again" | "hard" | "good" | "easy" | "default";
 
@@ -22,7 +21,7 @@ interface GradedWordProps {
   word: string;
   cleanedWord: string;
   wordKey: string;
-  // This function is called when the word is pressed, passing its details up to the parent
+  // --- FIX: The prop is updated to pass the full event object ---
   onPressWord: (
     event: NativeSyntheticEvent<NativeTouchEvent>,
     word: string,
@@ -39,16 +38,14 @@ export const GradedWord = React.memo(
 
     const handlePress = useCallback(
       (event: NativeSyntheticEvent<NativeTouchEvent>) => {
-        // Determine the next grade in the cycle
         const currentIndex =
           grade === "default" ? -1 : GRADING_CYCLE.indexOf(grade);
         const nextGrade =
           GRADING_CYCLE[(currentIndex + 1) % GRADING_CYCLE.length];
 
-        // Update this component's own state instantly
         setGrade(nextGrade);
 
-        // Notify the parent component of the press and the new rating
+        // --- FIX: Pass the event object along with other details ---
         onPressWord(event, cleanedWord, nextGrade, wordKey);
       },
       [grade, cleanedWord, wordKey, onPressWord]
