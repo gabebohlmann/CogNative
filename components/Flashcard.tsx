@@ -1,4 +1,3 @@
-// components/Flashcard.tsx
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
@@ -70,9 +69,6 @@ export default function Flashcard() {
 
   const handleFlip = () => {
     const toValue = isFlipped ? 0 : 180;
-    // --- FIX ---
-    // The native driver for animations is not initialized on mobile, causing a crash.
-    // Setting `useNativeDriver: false` makes the animation run on the JS thread, avoiding the error.
     Animated.timing(flipAnimation, {
       toValue,
       duration: 600,
@@ -80,19 +76,24 @@ export default function Flashcard() {
     }).start(() => setIsFlipped(!isFlipped));
   };
 
-  const handleFeedback = async (rating: "again" | "hard" | "good" | "easy") => {
-    if (!card) return;
+  const handleFeedback = (rating: "again" | "hard" | "good" | "easy") => {
+    if (!card || !settings) return;
 
-    // The mutation now expects 'wordText' instead of 'wordId'.
-    // We get this from the 'esperanto' field of the current card.
-    await gradeWord({ wordText: card.esperanto, rating });
-
+    // --- OPTIMIZATION ---
+    // 1. Update the UI immediately for a snappy user experience.
     setCards((currentCards) => (currentCards ? currentCards.slice(1) : []));
     setIsFlipped(false);
     flipAnimation.setValue(0);
+
+    // 2. Send the database update in the background (no 'await').
+    // We also add error handling in case the network request fails.
+    gradeWord({ wordText: card.esperanto, rating, settings }).catch((err) => {
+      console.error("Failed to save grade:", err);
+      // Optional: Here you could add the card back to the deck or show an error toast.
+    });
   };
 
-  if (!isSessionReady || cards === null) {
+  if (!isSessionReady || cards === null || !settings) {
     return <ActivityIndicator style={{ flex: 1 }} size="large" />;
   }
 
@@ -218,4 +219,3 @@ const styles = StyleSheet.create({
   goodButton: { backgroundColor: "#28a745" },
   easyButton: { backgroundColor: "#17a2b8" },
 });
-  

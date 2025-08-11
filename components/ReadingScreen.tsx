@@ -1,4 +1,3 @@
-// components/ReadingScreen.tsx
 import React, {
   useState,
   useRef,
@@ -14,47 +13,143 @@ import {
   View,
   Text as RNText,
   Pressable,
-  TouchableOpacity, // Import TouchableOpacity for buttons
+  TouchableOpacity,
 } from "react-native";
 import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { GradedWord } from "./GradedWord";
+import { GradedWord, GradeKey } from "./GradedWord";
 
-// --- Constants for font size control ---
 const MIN_FONT_SIZE = 14;
 const MAX_FONT_SIZE = 36;
 const DEFAULT_FONT_SIZE = 20;
 
+const GRADING_CYCLE_MAP: Record<GradeKey, GradeKey> = {
+  default: "again",
+  again: "hard",
+  hard: "good",
+  good: "easy",
+  easy: "again",
+};
+
+// The state for each word now tracks everything needed for the new logic
+interface WordState {
+  grade: GradeKey;
+  due: number | null;
+  sourceIndex: number | null;
+}
+
+// A performant manager for all expiration timers.
+class WordTimerManager {
+  private timers: Map<string, number> = new Map();
+  private subscribers: ((baseWord: string) => void)[] = [];
+
+  subscribe(callback: (baseWord: string) => void) {
+    this.subscribers.push(callback);
+  }
+  unsubscribe(callback: (baseWord: string) => void) {
+    this.subscribers = this.subscribers.filter((cb) => cb !== callback);
+  }
+
+  startTimer(baseWord: string, dueDate: number) {
+    this.clearTimer(baseWord);
+    const delay = dueDate - Date.now();
+    if (delay > 0) {
+      const timerId = setTimeout(() => {
+        this.subscribers.forEach((cb) => cb(baseWord));
+        this.timers.delete(baseWord);
+      }, delay);
+      this.timers.set(baseWord, timerId as any);
+    }
+  }
+
+  clearTimer(baseWord: string) {
+    if (this.timers.has(baseWord)) {
+      clearTimeout(this.timers.get(baseWord));
+      this.timers.delete(baseWord);
+    }
+  }
+
+  clearAll() {
+    this.timers.forEach((timerId) => clearTimeout(timerId));
+    this.timers.clear();
+  }
+}
+
 export default function ReadingScreen() {
   const colorScheme = useColorScheme();
   const convex = useConvex();
-  const [popup, setPopup] = useState<{
-    visible: boolean;
-    text: string;
-    x: number;
-    y: number;
-  }>({
-    visible: false,
-    text: "",
-    x: 0,
-    y: 0,
-  });
+  const [popup, setPopup] = useState({ visible: false, text: "", x: 0, y: 0 });
   const [translationCache, setTranslationCache] = useState<{
     [key: string]: string;
   }>({});
   const [isPrefetching, setIsPrefetching] = useState(true);
-  // --- State for dynamic font size ---
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
 
-  const lastGradedWordRef = useRef<{
-    word: string;
-    rating: string;
-    key: string;
-  } | null>(null);
+  const [wordStates, setWordStates] = useState<{
+    [cleanedWord: string]: WordState;
+  }>({});
+  const [, forceUpdate] = useState(0); // Dummy state to force re-render on expiration
+
   const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
+  const lastSubmittedWordRef = useRef<{
+    word: string;
+    rating: GradeKey;
+    sourceIndex: number;
+  } | null>(null);
+
+  const wordTimerManager = useMemo(() => new WordTimerManager(), []);
 
   const story = useQuery(api.stories.getFirstStory);
+  const settings = useQuery(api.users.getSettings);
   const gradeWord = useMutation(api.userWords.gradeWord);
+
+  const storyBaseWords = useMemo(() => {
+    if (!story) return [];
+    const words = story.content.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || [];
+    return Array.from(
+      new Set(
+        words.map((w) => (w.endsWith("n") && w.length > 1 ? w.slice(0, -1) : w))
+      )
+    );
+  }, [story]);
+
+  const initialUserWords = useQuery(
+    api.userWords.getUserWordsByText,
+    storyBaseWords.length > 0 ? { words: storyBaseWords } : "skip"
+  );
+
+  useEffect(() => {
+    // When a timer expires, this function forces a re-render.
+    // The render logic will then know the word's block has expired.
+    const handleExpire = () => forceUpdate((c) => c + 1);
+
+    wordTimerManager.subscribe(handleExpire);
+    return () => {
+      wordTimerManager.unsubscribe(handleExpire);
+      wordTimerManager.clearAll();
+    };
+  }, [wordTimerManager]);
+
+  useEffect(() => {
+    if (initialUserWords) {
+      setWordStates((prevStates) => {
+        const newStates = { ...prevStates };
+        for (const item of initialUserWords) {
+          if (!newStates[item.word]) {
+            newStates[item.word] = {
+              grade: "good",
+              due: item.data.due,
+              sourceIndex: -1,
+            };
+          }
+          if (item.data.due > Date.now()) {
+            wordTimerManager.startTimer(item.word, item.data.due);
+          }
+        }
+        return newStates;
+      });
+    }
+  }, [initialUserWords, wordTimerManager]);
 
   const storySegments = useMemo(() => {
     if (!story) return [];
@@ -72,14 +167,15 @@ export default function ReadingScreen() {
             api.userWords.getTranslationsForStory,
             { words: uniqueWords }
           );
-          const cacheObject = translationsArray.reduce(
-            (acc, item) => {
-              acc[item.esperanto] = item.english;
-              return acc;
-            },
-            {} as { [key: string]: string }
+          setTranslationCache(
+            translationsArray.reduce(
+              (acc, item) => {
+                acc[item.esperanto] = item.english;
+                return acc;
+              },
+              {} as { [key: string]: string }
+            )
           );
-          setTranslationCache(cacheObject);
         } catch (error) {
           console.error("Failed to prefetch translations:", error);
         } finally {
@@ -92,76 +188,117 @@ export default function ReadingScreen() {
     }
   }, [story, convex, translationCache]);
 
-  const hidePopup = useCallback(() => {
-    if (popup.visible) {
-      setPopup((p) => ({ ...p, visible: false }));
-    }
-  }, [popup.visible]);
-
-  const submitLastWordGrade = useCallback(async () => {
-    hidePopup();
-    if (lastGradedWordRef.current) {
-      const { word, rating } = lastGradedWordRef.current;
+  const commitGrade = useCallback(async () => {
+    if (lastSubmittedWordRef.current && settings) {
+      const sessionToCommit = { ...lastSubmittedWordRef.current };
       try {
-        await gradeWord({ wordText: word, rating });
+        const result = await gradeWord({
+          wordText: sessionToCommit.word,
+          rating: sessionToCommit.rating,
+          settings,
+        });
+
+        if (result && result.due) {
+          setWordStates((prev) => ({
+            ...prev,
+            [sessionToCommit.word]: {
+              grade: sessionToCommit.rating,
+              due: result.due,
+              sourceIndex: sessionToCommit.sourceIndex,
+            },
+          }));
+          wordTimerManager.startTimer(sessionToCommit.word, result.due);
+        }
       } catch (error) {
         console.error("Failed to submit word grade:", error);
       }
-      lastGradedWordRef.current = null;
     }
-  }, [gradeWord, hidePopup]);
+    lastSubmittedWordRef.current = null;
+  }, [gradeWord, settings, wordTimerManager]);
 
-  const handleWordPressParent = useCallback(
-    async (word: string, rating: string, wordKey: string) => {
+  const handleWordClick = useCallback(
+    (cleanedWord: string, wordKey: string, index: number) => {
+      const currentState = wordStates[cleanedWord];
+      if (currentState && currentState.due && currentState.due > Date.now()) {
+        const translation =
+          translationCache[cleanedWord] ||
+          translationCache[cleanedWord.slice(0, -1)];
+        if (translation) {
+          wordRefs.current[wordKey]?.measure(
+            (fx, fy, width, height, px, py) => {
+              setPopup({
+                visible: true,
+                text: translation,
+                x: px + width / 2,
+                y: py - height - 15,
+              });
+            }
+          );
+        }
+        return;
+      }
+
       if (
-        lastGradedWordRef.current &&
-        lastGradedWordRef.current.key !== wordKey
+        lastSubmittedWordRef.current &&
+        lastSubmittedWordRef.current.word !== cleanedWord
       ) {
-        await submitLastWordGrade();
-      }
-      lastGradedWordRef.current = { word, rating, key: wordKey };
-
-      let translation = translationCache[word];
-      if (!translation && word.endsWith("n") && word.length > 1) {
-        translation = translationCache[word.slice(0, -1)];
+        commitGrade();
       }
 
+      const currentGrade = wordStates[cleanedWord]?.grade || "default";
+      const nextGrade = GRADING_CYCLE_MAP[currentGrade];
+
+      setWordStates((prev) => ({
+        ...prev,
+        [cleanedWord]: { ...prev[cleanedWord], grade: nextGrade },
+      }));
+      lastSubmittedWordRef.current = {
+        word: cleanedWord,
+        rating: nextGrade,
+        sourceIndex: index,
+      };
+
+      const translation =
+        translationCache[cleanedWord] ||
+        translationCache[cleanedWord.slice(0, -1)];
       if (translation) {
-        const targetWord = wordRefs.current[wordKey];
-        targetWord?.measure((fx, fy, width, height, px, py) => {
-          const centerX = px + width / 2;
+        wordRefs.current[wordKey]?.measure((fx, fy, width, height, px, py) => {
           setPopup({
             visible: true,
             text: translation,
-            x: centerX,
+            x: px + width / 2,
             y: py - height - 15,
           });
         });
       }
     },
-    [submitLastWordGrade, translationCache]
+    [wordStates, translationCache, commitGrade, wordTimerManager]
   );
 
-  // --- Functions to handle zooming ---
-  const zoomIn = useCallback(() => {
-    setFontSize((prevSize) => Math.min(prevSize + 2, MAX_FONT_SIZE));
-  }, []);
+  const handlePressOutside = useCallback(() => {
+    setPopup((p) => ({ ...p, visible: false }));
+    commitGrade();
+  }, [commitGrade]);
 
-  const zoomOut = useCallback(() => {
-    setFontSize((prevSize) => Math.max(prevSize - 2, MIN_FONT_SIZE));
-  }, []);
+  const zoomIn = useCallback(
+    () => setFontSize((s) => Math.min(s + 2, MAX_FONT_SIZE)),
+    []
+  );
+  const zoomOut = useCallback(
+    () => setFontSize((s) => Math.max(s - 2, MIN_FONT_SIZE)),
+    []
+  );
 
-  // Pass dynamic font size to styles
   const styles = getStyles(colorScheme, fontSize);
 
-  if (!story || isPrefetching) {
+  if (!story || isPrefetching || !settings) {
     return <ActivityIndicator style={styles.loading} size="large" />;
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1 }} onTouchStart={handlePressOutside}>
       <ScrollView
-        onScrollBeginDrag={submitLastWordGrade}
+        onScrollBeginDrag={handlePressOutside}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContentContainer}
@@ -176,19 +313,36 @@ export default function ReadingScreen() {
               cleanedWord.length > 0 &&
               /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)
             ) {
+              let finalGrade: GradeKey = "default";
+              const state = wordStates[cleanedWord];
+
+              if (state) {
+                const isExpired = state.due && state.due <= Date.now();
+                const isAfterSource =
+                  state.sourceIndex !== null && index > state.sourceIndex;
+
+                if (isExpired && isAfterSource) {
+                  // If block expired and this word is a future duplicate, revert its color
+                  finalGrade = "default";
+                } else {
+                  // Otherwise, show its current grade color
+                  finalGrade = state.grade;
+                }
+              }
+
               return (
                 <GradedWord
                   key={segmentKey}
                   ref={(el) => (wordRefs.current[segmentKey] = el as Pressable)}
                   word={segment}
-                  cleanedWord={cleanedWord}
-                  wordKey={segmentKey}
-                  onPressWord={handleWordPressParent}
-                  fontSize={fontSize} // Pass font size down
+                  onPress={() =>
+                    handleWordClick(cleanedWord, segmentKey, index)
+                  }
+                  grade={finalGrade}
+                  fontSize={fontSize}
                 />
               );
             }
-            // Apply dynamic font size to non-word segments
             return (
               <RNText
                 key={index}
@@ -201,7 +355,6 @@ export default function ReadingScreen() {
         </View>
       </ScrollView>
 
-      {/* --- Zoom Controls UI --- */}
       <View style={styles.zoomControls}>
         <TouchableOpacity onPress={zoomOut} style={styles.zoomButton}>
           <RNText style={styles.zoomButtonText}>A-</RNText>
@@ -223,7 +376,6 @@ export default function ReadingScreen() {
   );
 }
 
-// Update getStyles to accept fontSize
 const getStyles = (
   colorScheme: "light" | "dark" | null | undefined,
   fontSize: number
@@ -235,17 +387,16 @@ const getStyles = (
     ? "rgba(50, 50, 50, 0.9)"
     : "rgba(30, 30, 30, 0.9)";
   const controlBgColor = isDark
-    ? "rgba(50, 50, 50, 0.8)"
+    ? "rgba(240, 240, 240, 0.8)"
     : "rgba(240, 240, 240, 0.8)";
-
   return StyleSheet.create({
     loading: {
       flex: 1,
       justifyContent: "center",
       alignItems: "center",
-      backgroundColor: backgroundColor,
+      backgroundColor,
     },
-    scrollContentContainer: { padding: 15, paddingBottom: 80 }, // Add padding to bottom for zoom controls
+    scrollContentContainer: { padding: 15, paddingBottom: 80 },
     title: {
       fontSize: 28,
       fontWeight: "bold",
@@ -255,7 +406,7 @@ const getStyles = (
     contentContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
-      lineHeight: fontSize * 1.7, // Dynamic line height
+      lineHeight: fontSize * 1.7,
       color: textColor,
     },
     popup: {
@@ -273,12 +424,7 @@ const getStyles = (
       zIndex: 10,
       transform: [{ translateX: "-50%" }],
     },
-    popupText: {
-      color: "#fff",
-      fontSize: fontSize,
-      textAlign: "center",
-    },
-    // --- Styles for Zoom Controls ---
+    popupText: { color: "#fff", fontSize: 16, textAlign: "center" },
     zoomControls: {
       position: "absolute",
       top: 10,
@@ -296,10 +442,6 @@ const getStyles = (
       alignItems: "center",
       marginHorizontal: 5,
     },
-    zoomButtonText: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: textColor,
-    },
+    zoomButtonText: { fontSize: 18, fontWeight: "bold", color: textColor },
   });
 };
