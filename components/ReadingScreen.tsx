@@ -31,48 +31,9 @@ const GRADING_CYCLE_MAP: Record<GradeKey, GradeKey> = {
   easy: "again",
 };
 
-// The state for each word now tracks everything needed for the new logic
-interface WordState {
+interface WordInfo {
   grade: GradeKey;
   due: number | null;
-  sourceIndex: number | null;
-}
-
-// A performant manager for all expiration timers.
-class WordTimerManager {
-  private timers: Map<string, number> = new Map();
-  private subscribers: ((baseWord: string) => void)[] = [];
-
-  subscribe(callback: (baseWord: string) => void) {
-    this.subscribers.push(callback);
-  }
-  unsubscribe(callback: (baseWord: string) => void) {
-    this.subscribers = this.subscribers.filter((cb) => cb !== callback);
-  }
-
-  startTimer(baseWord: string, dueDate: number) {
-    this.clearTimer(baseWord);
-    const delay = dueDate - Date.now();
-    if (delay > 0) {
-      const timerId = setTimeout(() => {
-        this.subscribers.forEach((cb) => cb(baseWord));
-        this.timers.delete(baseWord);
-      }, delay);
-      this.timers.set(baseWord, timerId as any);
-    }
-  }
-
-  clearTimer(baseWord: string) {
-    if (this.timers.has(baseWord)) {
-      clearTimeout(this.timers.get(baseWord));
-      this.timers.delete(baseWord);
-    }
-  }
-
-  clearAll() {
-    this.timers.forEach((timerId) => clearTimeout(timerId));
-    this.timers.clear();
-  }
 }
 
 export default function ReadingScreen() {
@@ -86,22 +47,24 @@ export default function ReadingScreen() {
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
 
   const [wordStates, setWordStates] = useState<{
-    [cleanedWord: string]: WordState;
+    [cleanedWord: string]: WordInfo;
   }>({});
-  const [, forceUpdate] = useState(0); // Dummy state to force re-render on expiration
 
   const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
   const lastSubmittedWordRef = useRef<{
     word: string;
     rating: GradeKey;
-    sourceIndex: number;
   } | null>(null);
-
-  const wordTimerManager = useMemo(() => new WordTimerManager(), []);
+  const lastInteractionIndexRef = useRef<number>(0); // Tracks reading position
 
   const story = useQuery(api.stories.getFirstStory);
   const settings = useQuery(api.users.getSettings);
   const gradeWord = useMutation(api.userWords.gradeWord);
+
+  const storySegments = useMemo(() => {
+    if (!story) return [];
+    return story.content.split(/(\s+|[.,!?;"'’“”])/);
+  }, [story]);
 
   const storyBaseWords = useMemo(() => {
     if (!story) return [];
@@ -119,42 +82,18 @@ export default function ReadingScreen() {
   );
 
   useEffect(() => {
-    // When a timer expires, this function forces a re-render.
-    // The render logic will then know the word's block has expired.
-    const handleExpire = () => forceUpdate((c) => c + 1);
-
-    wordTimerManager.subscribe(handleExpire);
-    return () => {
-      wordTimerManager.unsubscribe(handleExpire);
-      wordTimerManager.clearAll();
-    };
-  }, [wordTimerManager]);
-
-  useEffect(() => {
     if (initialUserWords) {
       setWordStates((prevStates) => {
         const newStates = { ...prevStates };
         for (const item of initialUserWords) {
           if (!newStates[item.word]) {
-            newStates[item.word] = {
-              grade: "good",
-              due: item.data.due,
-              sourceIndex: -1,
-            };
-          }
-          if (item.data.due > Date.now()) {
-            wordTimerManager.startTimer(item.word, item.data.due);
+            newStates[item.word] = { grade: "good", due: item.data.due };
           }
         }
         return newStates;
       });
     }
-  }, [initialUserWords, wordTimerManager]);
-
-  const storySegments = useMemo(() => {
-    if (!story) return [];
-    return story.content.split(/(\s+|[.,!?;"'’“”])/);
-  }, [story]);
+  }, [initialUserWords]);
 
   useEffect(() => {
     if (story && Object.keys(translationCache).length === 0) {
@@ -190,54 +129,60 @@ export default function ReadingScreen() {
 
   const commitGrade = useCallback(async () => {
     if (lastSubmittedWordRef.current && settings) {
-      const sessionToCommit = { ...lastSubmittedWordRef.current };
       try {
-        const result = await gradeWord({
-          wordText: sessionToCommit.word,
-          rating: sessionToCommit.rating,
+        await gradeWord({
+          wordText: lastSubmittedWordRef.current.word,
+          rating: lastSubmittedWordRef.current.rating,
           settings,
         });
-
-        if (result && result.due) {
-          setWordStates((prev) => ({
-            ...prev,
-            [sessionToCommit.word]: {
-              grade: sessionToCommit.rating,
-              due: result.due,
-              sourceIndex: sessionToCommit.sourceIndex,
-            },
-          }));
-          wordTimerManager.startTimer(sessionToCommit.word, result.due);
-        }
       } catch (error) {
         console.error("Failed to submit word grade:", error);
       }
     }
     lastSubmittedWordRef.current = null;
-  }, [gradeWord, settings, wordTimerManager]);
+  }, [gradeWord, settings]);
 
   const handleWordClick = useCallback(
-    (cleanedWord: string, wordKey: string, index: number) => {
-      const currentState = wordStates[cleanedWord];
-      if (currentState && currentState.due && currentState.due > Date.now()) {
-        const translation =
-          translationCache[cleanedWord] ||
-          translationCache[cleanedWord.slice(0, -1)];
-        if (translation) {
-          wordRefs.current[wordKey]?.measure(
-            (fx, fy, width, height, px, py) => {
-              setPopup({
-                visible: true,
-                text: translation,
-                x: px + width / 2,
-                y: py - height - 15,
+    (cleanedWord: string, wordKey: string, clickedIndex: number) => {
+      // --- Implied 'Good' Rating Logic ---
+      const startIndex = lastInteractionIndexRef.current;
+      const endIndex = clickedIndex;
+
+      for (let i = startIndex; i < endIndex; i++) {
+        const segment = storySegments[i];
+        const impliedCleanedWord = segment.trim().toLowerCase();
+
+        if (
+          impliedCleanedWord.length > 0 &&
+          /^[a-zĉĝĥĵŝŭ'’]+$/.test(impliedCleanedWord)
+        ) {
+          const wordState = wordStates[impliedCleanedWord];
+          // Only give an implied 'good' if the word is new or already 'good'.
+          // This avoids overriding a word you just marked 'again' or 'hard'.
+          if (
+            !wordState ||
+            wordState.grade === "default" ||
+            wordState.grade === "good"
+          ) {
+            setWordStates((prev) => ({
+              ...prev,
+              [impliedCleanedWord]: { grade: "good", due: null },
+            }));
+            // Fire-and-forget the database update for the implied word.
+            if (settings) {
+              gradeWord({
+                wordText: impliedCleanedWord,
+                rating: "good",
+                settings,
               });
             }
-          );
+          }
         }
-        return;
       }
+      lastInteractionIndexRef.current = clickedIndex + 1; // Update reading position
+      // --- End of Implied Rating Logic ---
 
+      // Now, handle the word that was actually clicked
       if (
         lastSubmittedWordRef.current &&
         lastSubmittedWordRef.current.word !== cleanedWord
@@ -252,11 +197,7 @@ export default function ReadingScreen() {
         ...prev,
         [cleanedWord]: { ...prev[cleanedWord], grade: nextGrade },
       }));
-      lastSubmittedWordRef.current = {
-        word: cleanedWord,
-        rating: nextGrade,
-        sourceIndex: index,
-      };
+      lastSubmittedWordRef.current = { word: cleanedWord, rating: nextGrade };
 
       const translation =
         translationCache[cleanedWord] ||
@@ -272,7 +213,14 @@ export default function ReadingScreen() {
         });
       }
     },
-    [wordStates, translationCache, commitGrade, wordTimerManager]
+    [
+      wordStates,
+      storySegments,
+      translationCache,
+      commitGrade,
+      gradeWord,
+      settings,
+    ]
   );
 
   const handlePressOutside = useCallback(() => {
@@ -313,23 +261,7 @@ export default function ReadingScreen() {
               cleanedWord.length > 0 &&
               /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)
             ) {
-              let finalGrade: GradeKey = "default";
-              const state = wordStates[cleanedWord];
-
-              if (state) {
-                const isExpired = state.due && state.due <= Date.now();
-                const isAfterSource =
-                  state.sourceIndex !== null && index > state.sourceIndex;
-
-                if (isExpired && isAfterSource) {
-                  // If block expired and this word is a future duplicate, revert its color
-                  finalGrade = "default";
-                } else {
-                  // Otherwise, show its current grade color
-                  finalGrade = state.grade;
-                }
-              }
-
+              const grade = wordStates[cleanedWord]?.grade || "default";
               return (
                 <GradedWord
                   key={segmentKey}
@@ -338,7 +270,7 @@ export default function ReadingScreen() {
                   onPress={() =>
                     handleWordClick(cleanedWord, segmentKey, index)
                   }
-                  grade={finalGrade}
+                  grade={grade}
                   fontSize={fontSize}
                 />
               );

@@ -36,11 +36,16 @@ function getFsrsInstance(settings: any): FSRS {
 
 function mapRating(rating: string): Rating {
   switch (rating) {
-    case "again": return Rating.Again;
-    case "hard": return Rating.Hard;
-    case "good": return Rating.Good;
-    case "easy": return Rating.Easy;
-    default: throw new Error(`Invalid rating: ${rating}`);
+    case "again":
+      return Rating.Again;
+    case "hard":
+      return Rating.Hard;
+    case "good":
+      return Rating.Good;
+    case "easy":
+      return Rating.Easy;
+    default:
+      throw new Error(`Invalid rating: ${rating}`);
   }
 }
 
@@ -79,7 +84,7 @@ export const gradeWord = mutation({
         q.eq("userId", user._id).eq("wordId", word._id)
       )
       .first();
-    
+
     // NOTE: We no longer block reviews for words that aren't due.
     // FSRS naturally handles early reviews.
 
@@ -92,7 +97,9 @@ export const gradeWord = mutation({
       card = {
         ...userWord,
         due: new Date(userWord.due),
-        last_review: userWord.last_review ? new Date(userWord.last_review) : undefined,
+        last_review: userWord.last_review
+          ? new Date(userWord.last_review)
+          : undefined,
         state: userWord.state as State,
       };
     } else {
@@ -168,7 +175,8 @@ export const getTranslationsForStory = query({
     );
     const translations: { esperanto: string; english: string }[] = [];
     for (const doc of wordDocs) {
-      if (doc) translations.push({ esperanto: doc.esperanto, english: doc.english });
+      if (doc)
+        translations.push({ esperanto: doc.esperanto, english: doc.english });
     }
     return translations;
   },
