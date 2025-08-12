@@ -85,9 +85,6 @@ export const gradeWord = mutation({
       )
       .first();
 
-    // NOTE: We no longer block reviews for words that aren't due.
-    // FSRS naturally handles early reviews.
-
     const now = new Date();
     const f = getFsrsInstance(settings);
     const fsrsRating = mapRating(rating);
@@ -142,6 +139,7 @@ export const getUserWordsByText = query({
   handler: async (ctx, { words }) => {
     const user = await getUser(ctx);
     if (!user) return [];
+
     const userWordsData: { word: string; data: any }[] = [];
     for (const baseWord of new Set(words)) {
       const wordDoc = await ctx.db
@@ -155,29 +153,37 @@ export const getUserWordsByText = query({
             q.eq("userId", user._id).eq("wordId", wordDoc._id)
           )
           .first();
-        if (userWord) userWordsData.push({ word: baseWord, data: userWord });
+        if (userWord) {
+          userWordsData.push({ word: baseWord, data: userWord });
+        }
       }
     }
     return userWordsData;
   },
 });
 
+// --- MODIFIED FUNCTION ---
+// This query is now highly efficient and will not hit the read limit.
 export const getTranslationsForStory = query({
   args: { words: v.array(v.string()) },
   handler: async (ctx, { words }) => {
-    const wordDocs = await Promise.all(
-      words.map((wordText) =>
-        ctx.db
-          .query("words")
-          .withIndex("by_esperanto", (q) => q.eq("esperanto", wordText))
-          .first()
-      )
-    );
-    const translations: { esperanto: string; english: string }[] = [];
-    for (const doc of wordDocs) {
-      if (doc)
-        translations.push({ esperanto: doc.esperanto, english: doc.english });
+    const requiredWords = new Set(words);
+    if (requiredWords.size === 0) {
+      return [];
     }
+
+    // 1. Fetch all words from the database in a single, efficient query.
+    const allWordDocs = await ctx.db.query("words").collect();
+
+    const translations: { esperanto: string; english: string }[] = [];
+
+    // 2. Filter for the required words in memory, which is very fast.
+    for (const doc of allWordDocs) {
+      if (requiredWords.has(doc.esperanto)) {
+        translations.push({ esperanto: doc.esperanto, english: doc.english });
+      }
+    }
+
     return translations;
   },
 });

@@ -1,3 +1,4 @@
+// convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -61,4 +62,14 @@ export default defineSchema({
     title: v.string(),
     content: v.string(),
   }),
+  sentences: defineTable({
+    sentence: v.string(),
+    range: v.optional(v.float64()),
+    rangeIndex: v.optional(v.float64()),
+    freq: v.optional(v.float64()),
+    freqIndex: v.optional(v.float64()),
+    max_rank: v.optional(v.float64()),
+    avg_rank: v.optional(v.float64()),
+    path: v.optional(v.string()),
+  }).index("by_rangeIndex", ["rangeIndex"]),  
 });

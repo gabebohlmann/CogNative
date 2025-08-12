@@ -13,6 +13,9 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as deck from "../deck.js";
+import type * as sentences from "../sentences.js";
+import type * as stats from "../stats.js";
 import type * as stories from "../stories.js";
 import type * as userWords from "../userWords.js";
 import type * as users from "../users.js";
@@ -27,6 +30,9 @@ import type * as words from "../words.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  deck: typeof deck;
+  sentences: typeof sentences;
+  stats: typeof stats;
   stories: typeof stories;
   userWords: typeof userWords;
   users: typeof users;

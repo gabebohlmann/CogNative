@@ -55,7 +55,7 @@ export default function ReadingScreen() {
     word: string;
     rating: GradeKey;
   } | null>(null);
-  const lastInteractionIndexRef = useRef<number>(0); // Tracks reading position
+  const lastInteractionIndexRef = useRef<number>(0);
 
   const story = useQuery(api.stories.getFirstStory);
   const settings = useQuery(api.users.getSettings);
@@ -128,77 +128,33 @@ export default function ReadingScreen() {
   }, [story, convex, translationCache]);
 
   const commitGrade = useCallback(async () => {
-    if (lastSubmittedWordRef.current && settings) {
+    const sessionToCommit = lastSubmittedWordRef.current;
+    lastSubmittedWordRef.current = null;
+
+    if (sessionToCommit && settings) {
       try {
-        await gradeWord({
-          wordText: lastSubmittedWordRef.current.word,
-          rating: lastSubmittedWordRef.current.rating,
+        const result = await gradeWord({
+          wordText: sessionToCommit.word,
+          rating: sessionToCommit.rating,
           settings,
         });
+        if (result && result.due) {
+          setWordStates((prev) => ({
+            ...prev,
+            [sessionToCommit.word]: {
+              grade: sessionToCommit.rating,
+              due: result.due,
+            },
+          }));
+        }
       } catch (error) {
         console.error("Failed to submit word grade:", error);
       }
     }
-    lastSubmittedWordRef.current = null;
   }, [gradeWord, settings]);
 
   const handleWordClick = useCallback(
     (cleanedWord: string, wordKey: string, clickedIndex: number) => {
-      // --- Implied 'Good' Rating Logic ---
-      const startIndex = lastInteractionIndexRef.current;
-      const endIndex = clickedIndex;
-
-      for (let i = startIndex; i < endIndex; i++) {
-        const segment = storySegments[i];
-        const impliedCleanedWord = segment.trim().toLowerCase();
-
-        if (
-          impliedCleanedWord.length > 0 &&
-          /^[a-zĉĝĥĵŝŭ'’]+$/.test(impliedCleanedWord)
-        ) {
-          const wordState = wordStates[impliedCleanedWord];
-          // Only give an implied 'good' if the word is new or already 'good'.
-          // This avoids overriding a word you just marked 'again' or 'hard'.
-          if (
-            !wordState ||
-            wordState.grade === "default" ||
-            wordState.grade === "good"
-          ) {
-            setWordStates((prev) => ({
-              ...prev,
-              [impliedCleanedWord]: { grade: "good", due: null },
-            }));
-            // Fire-and-forget the database update for the implied word.
-            if (settings) {
-              gradeWord({
-                wordText: impliedCleanedWord,
-                rating: "good",
-                settings,
-              });
-            }
-          }
-        }
-      }
-      lastInteractionIndexRef.current = clickedIndex + 1; // Update reading position
-      // --- End of Implied Rating Logic ---
-
-      // Now, handle the word that was actually clicked
-      if (
-        lastSubmittedWordRef.current &&
-        lastSubmittedWordRef.current.word !== cleanedWord
-      ) {
-        commitGrade();
-      }
-
-      const currentGrade = wordStates[cleanedWord]?.grade || "default";
-      const nextGrade = GRADING_CYCLE_MAP[currentGrade];
-
-      setWordStates((prev) => ({
-        ...prev,
-        [cleanedWord]: { ...prev[cleanedWord], grade: nextGrade },
-      }));
-      lastSubmittedWordRef.current = { word: cleanedWord, rating: nextGrade };
-
       const translation =
         translationCache[cleanedWord] ||
         translationCache[cleanedWord.slice(0, -1)];
@@ -212,6 +168,62 @@ export default function ReadingScreen() {
           });
         });
       }
+
+      const currentState = wordStates[cleanedWord];
+      if (currentState && currentState.due && currentState.due > Date.now()) {
+        return;
+      }
+
+      if (
+        lastSubmittedWordRef.current &&
+        lastSubmittedWordRef.current.word !== cleanedWord
+      ) {
+        commitGrade();
+      }
+
+      const batchUpdates: { [key: string]: WordInfo } = {};
+      const startIndex = lastInteractionIndexRef.current;
+
+      if (settings) {
+        for (let i = startIndex; i < clickedIndex; i++) {
+          const segment = storySegments[i];
+          if (!segment) continue;
+
+          const impliedCleanedWord = segment.trim().toLowerCase();
+          if (
+            impliedCleanedWord.length > 0 &&
+            /^[a-zĉĝĥĵŝŭ'’]+$/.test(impliedCleanedWord)
+          ) {
+            const impliedWordState = wordStates[impliedCleanedWord];
+
+            if (
+              !impliedWordState ||
+              impliedWordState.grade === "default" ||
+              impliedWordState.grade === "good"
+            ) {
+              batchUpdates[impliedCleanedWord] = { grade: "good", due: null };
+              gradeWord({
+                wordText: impliedCleanedWord,
+                rating: "good",
+                settings,
+              });
+            }
+          }
+        }
+      }
+
+      const currentGrade = wordStates[cleanedWord]?.grade || "default";
+      const nextGrade = GRADING_CYCLE_MAP[currentGrade];
+
+      const optimisticDueDate = Date.now() + 10 * 60 * 1000;
+      batchUpdates[cleanedWord] = { grade: nextGrade, due: optimisticDueDate };
+
+      if (Object.keys(batchUpdates).length > 0) {
+        setWordStates((prev) => ({ ...prev, ...batchUpdates }));
+      }
+
+      lastSubmittedWordRef.current = { word: cleanedWord, rating: nextGrade };
+      lastInteractionIndexRef.current = clickedIndex + 1;
     },
     [
       wordStates,
@@ -321,12 +333,13 @@ const getStyles = (
   const controlBgColor = isDark
     ? "rgba(240, 240, 240, 0.8)"
     : "rgba(240, 240, 240, 0.8)";
+
   return StyleSheet.create({
     loading: {
       flex: 1,
       justifyContent: "center",
       alignItems: "center",
-      backgroundColor,
+      backgroundColor: backgroundColor,
     },
     scrollContentContainer: { padding: 15, paddingBottom: 80 },
     title: {
@@ -356,7 +369,12 @@ const getStyles = (
       zIndex: 10,
       transform: [{ translateX: "-50%" }],
     },
-    popupText: { color: "#fff", fontSize: 16, textAlign: "center" },
+    popupText: {
+      color: "#fff",
+      // MODIFICATION: Use the dynamic fontSize variable
+      fontSize: fontSize,
+      textAlign: "center",
+    },
     zoomControls: {
       position: "absolute",
       top: 10,
@@ -374,6 +392,10 @@ const getStyles = (
       alignItems: "center",
       marginHorizontal: 5,
     },
-    zoomButtonText: { fontSize: 18, fontWeight: "bold", color: textColor },
+    zoomButtonText: {
+      fontSize: 18,
+      fontWeight: "bold",
+      color: textColor,
+    },
   });
 };

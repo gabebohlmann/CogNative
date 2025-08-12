@@ -39,18 +39,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? "settings" : "settings-outline"}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="reading"
         options={{
           title: "Reading",
@@ -62,6 +50,54 @@ export default function TabLayout() {
           ),
         }}
       />
-    </Tabs> 
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: "Stats",
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              name={focused ? "bar-chart" : "bar-chart-outline"}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="deckBrowser"
+        options={{
+          title: "Deck",
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              name={focused ? "grid" : "grid-outline"}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="sents"
+        options={{
+          title: "Sents",
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              name={focused ? "text" : "text-outline"}
+              color={color}
+            />
+          ),
+        }}
+      />  
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              name={focused ? "settings" : "settings-outline"}
+              color={color}
+            />
+          ),
+        }}
+      />          
+    </Tabs>
   );
 }
