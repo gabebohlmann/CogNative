@@ -16,93 +16,76 @@ import {
 } from "react-native";
 import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { FlashList } from "@shopify/flash-list";
 import { GradedWord, GradeKey } from "./GradedWord";
+import { Id } from "../convex/_generated/dataModel";
 
 interface SentenceState {
   grades: { [cleanedWord: string]: GradeKey };
 }
 
 export default function SentencesScreen() {
-  // --- (Existing Hooks) ---
-  const sentences = useQuery(api.sentences.getSentences);
-  const settings = useQuery(api.users.getSettings);
-  const gradeWord = useMutation(api.userWords.gradeWord);
-  const userWords = useQuery(api.deck.getDeckWords);
-  const convex = useConvex(); // Need convex client for prefetching
-  const colorScheme = useColorScheme();
-
-  // --- NEW: State and Refs for Popup ---
+  // --- ALL HOOKS MUST BE CALLED AT THE TOP, UNCONDITIONALLY ---
+  const [seenSentenceIds, setSeenSentenceIds] = useState<Id<"sentences">[]>([]);
+  const [sentenceState, setSentenceState] = useState<SentenceState>({
+    grades: {},
+  });
   const [popup, setPopup] = useState({ visible: false, text: "", x: 0, y: 0 });
   const [translationCache, setTranslationCache] = useState<{
     [key: string]: string;
   }>({});
+
+  const sentenceQuery = useQuery(api.sentences.getSentenceForReview, {
+    seenSentenceIds,
+  });
+  const settings = useQuery(api.users.getSettings);
+  const gradeWord = useMutation(api.userWords.gradeWord);
+  const convex = useConvex();
+  const colorScheme = useColorScheme();
+
   const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
-
-  // --- (Existing State) ---
-  const [sentenceStates, setSentenceStates] = useState<{
-    [sentenceId: string]: SentenceState;
-  }>({});
-  const [currentIndex, setCurrentIndex] = useState(0);
-
   const styles = getStyles(colorScheme);
+  const currentSentence = sentenceQuery;
 
-  const userWordMap = useMemo(() => {
-    if (!userWords) return new Map();
-    return new Map(userWords.map((word) => [word.esperanto, word]));
-  }, [userWords]);
-
-  const currentSentence = sentences ? sentences[currentIndex] : null;
+  // This hook, which depends on 'currentSentence', is now also at the top level.
   const wordsInCurrentSentence = useMemo(
     () => currentSentence?.sentence.split(/(\s+|[.,!?;"'’“”])/) || [],
     [currentSentence]
   );
 
-  // --- NEW: useEffect to prefetch all translations for all sentences ---
   useEffect(() => {
-    if (sentences && Object.keys(translationCache).length === 0) {
-      const allText = sentences.map((s) => s.sentence).join(" ");
+    if (currentSentence) {
       const uniqueWords = Array.from(
-        new Set(allText.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || [])
+        new Set(
+          currentSentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
+        )
       );
-
       const prefetchTranslations = async () => {
         try {
           const translationsArray = await convex.query(
             api.userWords.getTranslationsForStory,
             { words: uniqueWords }
           );
-          setTranslationCache(
-            translationsArray.reduce(
+          setTranslationCache((prev) => ({
+            ...prev,
+            ...translationsArray.reduce(
               (acc, item) => {
                 acc[item.esperanto] = item.english;
                 return acc;
               },
               {} as { [key: string]: string }
-            )
-          );
+            ),
+          }));
         } catch (error) {
           console.error("Failed to prefetch sentence translations:", error);
         }
       };
       prefetchTranslations();
     }
-  }, [sentences, convex, translationCache]);
-
-  useEffect(() => {
-    if (sentences) {
-      const initialStates = {};
-      for (const sentence of sentences) {
-        initialStates[sentence._id] = { grades: {} };
-      }
-      setSentenceStates(initialStates);
-    }
-  }, [sentences]);
+  }, [currentSentence, convex]);
 
   const handleWordClick = useCallback(
-    (sentenceId: string, cleanedWord: string, index: number) => {
-      // --- NEW: Popup display logic ---
-      const wordKey = `${sentenceId}-${index}`;
+    (cleanedWord: string, index: number) => {
+      const wordKey = `${currentSentence?._id}-${index}`;
       const translation =
         translationCache[cleanedWord] ||
         translationCache[cleanedWord.slice(0, -1)];
@@ -117,130 +100,88 @@ export default function SentencesScreen() {
         });
       }
 
-      // --- (Existing Grading Logic) ---
-      const wordData = userWordMap.get(cleanedWord);
-      const dueDateString = wordData?.due;
+      const currentGrade = sentenceState.grades[cleanedWord] || "default";
+      const nextGrade =
+        currentGrade === "default"
+          ? "again"
+          : currentGrade === "again"
+            ? "hard"
+            : currentGrade === "hard"
+              ? "good"
+              : currentGrade === "good"
+                ? "easy"
+                : "again";
 
-      if (dueDateString && dueDateString !== "Due") {
-        console.log(`Word '${cleanedWord}' is blocked.`);
-        return;
-      }
-
-      setSentenceStates((prev) => {
-        const currentGrades = prev[sentenceId]?.grades || {};
-        const currentGrade = currentGrades[cleanedWord] || "default";
-        const nextGrade =
-          currentGrade === "default"
-            ? "again"
-            : currentGrade === "again"
-              ? "hard"
-              : currentGrade === "hard"
-                ? "good"
-                : currentGrade === "good"
-                  ? "easy"
-                  : "again";
-
-        return {
-          ...prev,
-          [sentenceId]: {
-            ...prev[sentenceId],
-            grades: { ...currentGrades, [cleanedWord]: nextGrade },
-          },
-        };
-      });
+      setSentenceState((prev) => ({
+        ...prev,
+        grades: { ...prev.grades, [cleanedWord]: nextGrade },
+      }));
     },
-    [userWordMap, translationCache]
+    [sentenceState, translationCache, currentSentence]
   );
 
-  const handleSubmit = useCallback(
-    (sentenceId: string) => {
-      if (!settings || !sentences) return;
-      const state = sentenceStates[sentenceId];
-      if (!state) return;
+  const handleMarkAllGood = useCallback(() => {
+    if (!currentSentence) return;
+    const wordsInSentence =
+      currentSentence.sentence.match(/[a-zĉĝĥĵŝŭ'’]+/gi) || [];
+    const newGrades = {};
+    for (const word of wordsInSentence) {
+      newGrades[word.toLowerCase()] = "good";
+    }
+    setSentenceState({ grades: newGrades });
+  }, [currentSentence]);
 
-      const wordsInSentence = new Set(
-        sentences
-          .find((s) => s._id === sentenceId)
-          ?.sentence.toLowerCase()
-          .match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
+  const handleSubmitAndNext = useCallback(() => {
+    if (!settings || !currentSentence) return;
+    const wordsInSentence = new Set(
+      currentSentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
+    );
+
+    for (const word of wordsInSentence) {
+      const rating = sentenceState.grades[word] || "good";
+      gradeWord({ wordText: word, rating, settings }).catch((err) =>
+        console.error(`Failed to grade word '${word}':`, err)
       );
-      for (const word of wordsInSentence) {
-        const rating = state.grades[word] || "good";
-        gradeWord({ wordText: word, rating, settings }).catch((err) =>
-          console.error(`Failed to grade word '${word}':`, err)
-        );
-      }
+    }
 
-      if (currentIndex < sentences.length - 1) {
-        setCurrentIndex(currentIndex + 1);
-      }
-    },
-    [sentenceStates, sentences, settings, gradeWord, currentIndex]
-  );
+    setSeenSentenceIds((prev) => [...prev, currentSentence._id]);
+    setSentenceState({ grades: {} });
+  }, [currentSentence, sentenceState, settings, gradeWord]);
 
-  // --- NEW: Handler to dismiss the popup ---
   const handlePressOutside = useCallback(() => {
     if (popup.visible) {
       setPopup((p) => ({ ...p, visible: false }));
     }
   }, [popup.visible]);
 
-  const handleMarkAllGood = useCallback(
-    (sentenceId: string) => {
-      if (!sentences) return;
-      setSentenceStates((prev) => {
-        const wordsInSentence =
-          sentences
-            .find((s) => s._id === sentenceId)
-            ?.sentence.match(/[a-zĉĝĥĵŝŭ'’]+/gi) || [];
-        const newGrades = {};
-        for (const word of wordsInSentence) {
-          newGrades[word.toLowerCase()] = "good";
-        }
-        return {
-          ...prev,
-          [sentenceId]: { ...prev[sentenceId], grades: newGrades },
-        };
-      });
-    },
-    [sentences]
-  );
-
-  if (sentences === undefined || userWords === undefined) {
+  // The conditional return for the loading state now comes AFTER all hooks.
+  if (sentenceQuery === undefined) {
     return <ActivityIndicator style={styles.container} size="large" />;
   }
-
-  const currentSentenceState = currentSentence
-    ? sentenceStates[currentSentence._id]
-    : null;
 
   return (
     <View style={styles.container} onTouchStart={handlePressOutside}>
       <Text style={styles.title}>Sentences Practice</Text>
       <View style={styles.content}>
-        {currentSentence && currentSentenceState ? (
+        {currentSentence ? (
           <View style={styles.card}>
             <View style={styles.sentenceContainer}>
               {wordsInCurrentSentence.map((word, index) => {
                 const cleanedWord = word.trim().toLowerCase();
-                const wordKey = `${currentSentence._id}-${index}`; // Unique key for the ref
+                const wordKey = `${currentSentence._id}-${index}`;
                 if (
                   cleanedWord.length > 0 &&
                   /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)
                 ) {
-                  const grade =
-                    currentSentenceState.grades[cleanedWord] || "default";
+                  const grade = sentenceState.grades[cleanedWord] || "default";
                   return (
                     <GradedWord
                       key={wordKey}
-                      // NEW: Attach the ref to the component
                       ref={(el) =>
                         (wordRefs.current[wordKey] = el as Pressable)
                       }
                       word={word}
-                      onPress={() =>
-                        handleWordClick(currentSentence._id, cleanedWord, index)
-                      }
+                      onPress={() => handleWordClick(cleanedWord, index)}
                       grade={grade}
                       fontSize={20}
                     />
@@ -256,51 +197,26 @@ export default function SentencesScreen() {
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => handleMarkAllGood(currentSentence._id)}
+                onPress={handleMarkAllGood}
               >
                 <Text style={styles.buttonText}>Mark All Good</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionButton, styles.submitButton]}
-                onPress={() => handleSubmit(currentSentence._id)}
+                onPress={handleSubmitAndNext}
               >
-                <Text style={styles.buttonText}>Submit</Text>
+                <Text style={styles.buttonText}>Submit & Next</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          <Text style={styles.emptyText}>No sentences found.</Text>
-        )}
-
-        {sentences && sentences.length > 0 && (
-          <View style={styles.navContainer}>
-            <TouchableOpacity
-              style={[
-                styles.navButton,
-                currentIndex === 0 && styles.disabledButton,
-              ]}
-              onPress={() => setCurrentIndex(currentIndex - 1)}
-              disabled={currentIndex === 0}
-            >
-              <Text style={styles.buttonText}>Previous</Text>
-            </TouchableOpacity>
-            <Text style={styles.navText}>
-              {currentIndex + 1} / {sentences.length}
+          <View style={styles.card}>
+            <Text style={styles.emptyText}>
+              🎉 No more sentences for now. Well done!
             </Text>
-            <TouchableOpacity
-              style={[
-                styles.navButton,
-                currentIndex >= sentences.length - 1 && styles.disabledButton,
-              ]}
-              onPress={() => setCurrentIndex(currentIndex + 1)}
-              disabled={currentIndex >= sentences.length - 1}
-            >
-              <Text style={styles.buttonText}>Next</Text>
-            </TouchableOpacity>
           </View>
         )}
       </View>
-      {/* --- NEW: Render the popup --- */}
       {popup.visible && (
         <View
           style={[styles.popup, { top: popup.y, left: popup.x }]}
@@ -337,12 +253,12 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       backgroundColor: isDark ? "#2a2a2a" : "#fff",
       borderRadius: 12,
       padding: 20,
-      minHeight: 150,
+      minHeight: 200,
+      justifyContent: "space-between",
     },
     sentenceContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
-      marginBottom: 20,
       alignItems: "center",
     },
     sentenceText: { fontSize: 20, color: textColor, lineHeight: 32 },
@@ -350,7 +266,6 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       flexDirection: "row",
       justifyContent: "flex-end",
       gap: 10,
-      marginTop: "auto",
       paddingTop: 20,
     },
     actionButton: {
@@ -363,49 +278,18 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     buttonText: { color: isDark ? "#eee" : "#111", fontWeight: "600" },
     emptyText: {
       textAlign: "center",
-      fontSize: 16,
+      fontSize: 18,
       color: isDark ? "#aaa" : "#666",
     },
-    navContainer: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 20,
-    },
-    navButton: {
-      paddingVertical: 12,
-      paddingHorizontal: 24,
-      backgroundColor: "#007bff", // Kept blue for both themes
-      borderRadius: 8,
-    },
-    disabledButton: {
-      backgroundColor: isDark ? "#333" : "#ccc",
-    },
-    navText: {
-      fontSize: 16,
-      fontWeight: "600",
-      color: textColor,
-    },
-    // --- NEW: Styles for the popup ---
     popup: {
       position: "absolute",
       backgroundColor: popupBgColor,
       borderRadius: 8,
       paddingVertical: 8,
       paddingHorizontal: 12,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-      elevation: 5,
-      maxWidth: 250,
       zIndex: 10,
       transform: [{ translateX: "-50%" }],
     },
-    popupText: {
-      color: "#fff",
-      fontSize: 16,
-      textAlign: "center",
-    },
+    popupText: { color: "#fff", fontSize: 16, textAlign: "center" },
   });
 };

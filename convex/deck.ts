@@ -1,4 +1,3 @@
-// convex/deck.ts
 import { query } from "./_generated/server";
 
 // FSRS State enum values for clarity
@@ -61,17 +60,15 @@ export const getDeckWords = query({
       .withIndex("by_user_word", (q) => q.eq("userId", user._id))
       .collect();
 
-    // Sort words by their due date, with the soonest due first
     allUserWords.sort((a, b) => a.due - b.due);
 
-    // Combine userWord data with the original word data from the 'words' table
     const deckData = await Promise.all(
       allUserWords.map(async (userWord) => {
         const word = await ctx.db.get(userWord.wordId);
-        if (!word) return null; // Skip if the base word is not found
+        if (!word) return null;
 
         return {
-          _id: userWord._id.toString(), // Use string ID for keys
+          _id: userWord._id.toString(),
           esperanto: word.esperanto,
           english: word.english,
           due: formatDueDate(userWord.due),
@@ -79,11 +76,13 @@ export const getDeckWords = query({
           difficulty: userWord.difficulty.toFixed(1),
           reps: userWord.reps,
           state: mapStateToString(userWord.state),
+          // --- ADDED FIELDS ---
+          rangeIndex: word.rangeIndex ?? "N/A",
+          freqIndex: word.freqIndex ?? "N/A",
         };
       })
     );
 
-    // Filter out any entries that couldn't be joined
     return deckData.filter(Boolean);
   },
 });

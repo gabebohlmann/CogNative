@@ -1,4 +1,3 @@
-// components/DeckBrowserScreen.tsx
 import React from "react";
 import {
   View,
@@ -11,9 +10,35 @@ import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { FlashList } from "@shopify/flash-list";
 
-// A memoized component to render a single word's stats card
-const WordCard = React.memo(({ item }: { item: any }) => {
+// --- NEW: Table Header Component ---
+const TableHeader = () => {
   const styles = getStyles(useColorScheme());
+  return (
+    <View style={[styles.tableRow, styles.tableHeader]}>
+      <Text style={[styles.headerText, { flex: 3 }]}>Word</Text>
+      <Text style={[styles.headerText, { flex: 1, textAlign: "center" }]}>
+        Due
+      </Text>
+      <Text style={[styles.headerText, { flex: 1, textAlign: "center" }]}>
+        State
+      </Text>
+      <Text style={[styles.headerText, { flex: 1, textAlign: "center" }]}>
+        Reps
+      </Text>
+      <Text style={[styles.headerText, { flex: 1, textAlign: "center" }]}>
+        Range
+      </Text>
+      <Text style={[styles.headerText, { flex: 1, textAlign: "center" }]}>
+        Freq
+      </Text>
+    </View>
+  );
+};
+
+// --- NEW: Table Row Component ---
+const WordRow = React.memo(({ item, index }: { item: any; index: number }) => {
+  const styles = getStyles(useColorScheme());
+  const isEvenRow = index % 2 === 0;
 
   const stateColor =
     item.state === "Learning"
@@ -25,31 +50,32 @@ const WordCard = React.memo(({ item }: { item: any }) => {
           : "#28a745";
 
   return (
-    <View style={styles.card}>
-      <View style={styles.wordHeader}>
+    <View style={[styles.tableRow, isEvenRow ? styles.evenRow : {}]}>
+      <View style={[styles.tableCell, { flex: 3 }]}>
         <Text style={styles.wordText}>{item.esperanto}</Text>
         <Text style={styles.wordTranslation}>{item.english}</Text>
       </View>
-      <View style={styles.statsGrid}>
-        <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Due</Text>
-          <Text style={[styles.statValue, { color: stateColor }]}>
-            {item.due}
-          </Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statLabel}>State</Text>
-          <Text style={styles.statValue}>{item.state}</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Reps</Text>
-          <Text style={styles.statValue}>{item.reps}</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statLabel}>Stability</Text>
-          <Text style={styles.statValue}>{item.stability}</Text>
-        </View>
-      </View>
+      <Text
+        style={[
+          styles.tableCell,
+          styles.cellText,
+          { flex: 1, color: stateColor },
+        ]}
+      >
+        {item.due}
+      </Text>
+      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
+        {item.state}
+      </Text>
+      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
+        {item.reps}
+      </Text>
+      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
+        {item.rangeIndex}
+      </Text>
+      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
+        {item.freqIndex}
+      </Text>
     </View>
   );
 });
@@ -65,10 +91,11 @@ export default function DeckBrowserScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>📖 Deck Browser</Text>
+      <TableHeader />
       <FlashList
         data={deckWords}
-        renderItem={({ item }) => <WordCard item={item} />}
-        estimatedItemSize={135} // Helps with performance
+        renderItem={({ item, index }) => <WordRow item={item} index={index} />}
+        estimatedItemSize={60} // Adjusted for compact row height
         keyExtractor={(item) => item._id}
         ListEmptyComponent={() => (
           <Text style={styles.emptyText}>
@@ -82,68 +109,61 @@ export default function DeckBrowserScreen() {
 
 const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
   const isDark = colorScheme === "dark";
-  const cardBackgroundColor = isDark ? "#2a2a2a" : "#fff";
   const textColor = isDark ? "#eee" : "#111";
   const secondaryTextColor = isDark ? "#aaa" : "#666";
+  const borderColor = isDark ? "#444" : "#ddd";
+  const evenRowBg = isDark ? "#2a2a2a" : "#f9f9f9";
 
   return StyleSheet.create({
     container: {
       flex: 1,
-      padding: 20,
+      padding: 10,
       backgroundColor: isDark ? "#121212" : "#f0f4f8",
     },
     title: {
       fontSize: 28,
       fontWeight: "bold",
       color: textColor,
-      marginBottom: 20,
-    },
-    card: {
-      backgroundColor: cardBackgroundColor,
-      borderRadius: 12,
-      padding: 20,
       marginBottom: 15,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 3,
-      elevation: 2,
+      paddingHorizontal: 10,
     },
-    wordHeader: {
-      marginBottom: 15,
+    // --- Table Styles ---
+    tableHeader: {
+      borderBottomWidth: 2,
+      borderColor: borderColor,
+      paddingBottom: 10,
+    },
+    headerText: {
+      fontWeight: "bold",
+      color: textColor,
+      fontSize: 14,
+    },
+    tableRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      paddingHorizontal: 10,
       borderBottomWidth: 1,
-      borderBottomColor: isDark ? "#444" : "#eee",
-      paddingBottom: 15,
+      borderColor: borderColor,
+    },
+    evenRow: {
+      backgroundColor: evenRowBg,
+    },
+    tableCell: {
+      textAlign: "center",
+      color: textColor,
+    },
+    cellText: {
+      fontSize: 16,
     },
     wordText: {
-      fontSize: 22,
-      fontWeight: "600",
+      fontSize: 16,
+      fontWeight: "500",
       color: textColor,
     },
     wordTranslation: {
-      fontSize: 16,
+      fontSize: 12,
       color: secondaryTextColor,
-      fontStyle: "italic",
-    },
-    statsGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      justifyContent: "space-between",
-    },
-    statItem: {
-      width: "48%", // Two items per row
-      alignItems: "center",
-      paddingVertical: 8,
-    },
-    statLabel: {
-      fontSize: 14,
-      color: secondaryTextColor,
-      marginBottom: 4,
-    },
-    statValue: {
-      fontSize: 18,
-      fontWeight: "500",
-      color: textColor,
     },
     emptyText: {
       marginTop: 50,
@@ -152,4 +172,4 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       color: secondaryTextColor,
     },
   });
-};
+};            
