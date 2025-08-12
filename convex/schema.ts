@@ -71,5 +71,10 @@ export default defineSchema({
     max_rank: v.optional(v.float64()),
     avg_rank: v.optional(v.float64()),
     path: v.optional(v.string()),
-  }).index("by_rangeIndex", ["rangeIndex"]),  
+  }).index("by_rangeIndex", ["rangeIndex"]),
+  userSents: defineTable({
+    userId: v.id("users"),
+    sentenceId: v.id("sentences"),
+    reps: v.number(),   
+  }).index("by_user_sent", ["userId", "sentenceId"]),
 });

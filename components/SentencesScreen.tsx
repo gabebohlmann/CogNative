@@ -1,3 +1,4 @@
+// components/SentencesScreen.tsx
 import React, {
   useState,
   useMemo,
@@ -39,6 +40,7 @@ export default function SentencesScreen() {
   });
   const settings = useQuery(api.users.getSettings);
   const gradeWord = useMutation(api.userWords.gradeWord);
+  const markSentenceAsSeen = useMutation(api.sentences.markSentenceAsSeen);
   const convex = useConvex();
   const colorScheme = useColorScheme();
 
@@ -143,7 +145,8 @@ export default function SentencesScreen() {
         console.error(`Failed to grade word '${word}':`, err)
       );
     }
-
+    markSentenceAsSeen({ sentenceId: currentSentence._id });
+        
     setSeenSentenceIds((prev) => [...prev, currentSentence._id]);
     setSentenceState({ grades: {} });
   }, [currentSentence, sentenceState, settings, gradeWord]);
