@@ -32,6 +32,7 @@ export const getStats = query({
         learned: 0,
         dueToday: 0,
         totalKnown: 0,
+        sentencesLearned: 0,
       };
     }
 
@@ -71,6 +72,7 @@ export const getStats = query({
       learned: learnedCount,
       dueToday: dueTodayCount,
       totalKnown: allUserWords.length,
+      sentencesLearned: user.maxSentRangeIndex ?? 0,
     };
   },
 });

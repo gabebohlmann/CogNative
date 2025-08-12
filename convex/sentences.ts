@@ -1,9 +1,18 @@
-// convex/sentences.ts
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+import {
+  fsrs,
+  FSRS,
+  generatorParameters,
+  Card,
+  State,
+  Rating,
+  createEmptyCard,
+} from "ts-fsrs";
 
-const State = { Review: 2 };
+// --- Helper Functions ---
 
 async function getUser(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -15,6 +24,141 @@ async function getUser(ctx: any) {
     )
     .unique();
 }
+
+function getFsrsInstance(settings: any): FSRS {
+  return fsrs(
+    generatorParameters({
+      request_retention: settings.request_retention,
+      maximum_interval: settings.maximum_interval,
+      learning_steps: settings.learning_steps,
+      relearning_steps: settings.relearning_steps,
+      easyBonus: settings.easy_interval,
+    })
+  );
+}
+
+function mapRating(rating: string): Rating {
+  switch (rating) {
+    case "again":
+      return Rating.Again;
+    case "hard":
+      return Rating.Hard;
+    case "good":
+      return Rating.Good;
+    case "easy":
+      return Rating.Easy;
+    default:
+      throw new Error(`Invalid rating: ${rating}`);
+  }
+}
+
+// --- Queries and Mutations ---
+
+export const getSentenceFlashcard = query({
+  handler: async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) return null;
+
+    const userSents = await ctx.db
+      .query("userSents")
+      .withIndex("by_user_sent", (q) => q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("mode"), "flashcard"))
+      .collect();
+
+    const dueCard = userSents
+      .sort((a, b) => a.due! - b.due!)
+      .find((s) => s.due! <= Date.now());
+    if (dueCard) {
+      return await ctx.db.get(dueCard.sentenceId);
+    }
+
+    const maxRangeIndex = user.maxSentRangeIndex ?? 0;
+    const nextSentence = await ctx.db
+      .query("sentences")
+      .withIndex("by_rangeIndex")
+      .filter((q) => q.gt(q.field("rangeIndex"), maxRangeIndex))
+      .order("asc")
+      .first();
+
+    return nextSentence;
+  },
+});
+
+export const gradeSentence = mutation({
+  args: { sentenceId: v.id("sentences"), rating: v.string() },
+  handler: async (ctx, { sentenceId, rating }) => {
+    const user = await getUser(ctx);
+    const settings = user?.settings;
+    if (!user || !settings) return;
+
+    const sentence = await ctx.db.get(sentenceId);
+    if (!sentence) return;
+
+    const f = getFsrsInstance(settings);
+    const fsrsRating = mapRating(rating);
+    const now = new Date();
+
+    let userSent = await ctx.db
+      .query("userSents")
+      .withIndex("by_user_sent", (q) =>
+        q.eq("userId", user._id).eq("sentenceId", sentenceId)
+      )
+      .first();
+
+    let card: Card;
+    if (userSent && userSent.mode === "flashcard") {
+      card = {
+        ...createEmptyCard(),
+        ...userSent,
+        due: new Date(userSent.due!),
+        last_review: userSent.last_review
+          ? new Date(userSent.last_review)
+          : undefined,
+      };
+    } else {
+      card = createEmptyCard(now);
+    }
+
+    const scheduled = f.repeat(card, now)[fsrsRating];
+    const newCard = scheduled.card;
+
+    const dataToStore = {
+      userId: user._id,
+      sentenceId: sentenceId,
+      reps: (userSent?.reps ?? 0) + 1,
+      mode: "flashcard",
+      due: newCard.due.getTime(),
+      stability: newCard.stability,
+      difficulty: newCard.difficulty,
+      elapsed_days: newCard.elapsed_days,
+      scheduled_days: newCard.scheduled_days,
+      lapses: newCard.lapses,
+      state: newCard.state,
+      last_review: newCard.last_review!.getTime(),
+    };
+
+    if (userSent) {
+      await ctx.db.patch(userSent._id, dataToStore);
+    } else {
+      await ctx.db.insert("userSents", dataToStore);
+    }
+
+    if ((sentence.rangeIndex ?? 0) > (user.maxSentRangeIndex ?? 0)) {
+      await ctx.db.patch(user._id, { maxSentRangeIndex: sentence.rangeIndex });
+    }
+
+    const wordsInSentence = new Set(
+      sentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
+    );
+    for (const word of wordsInSentence) {
+      await ctx.scheduler.runAfter(0, internal.userWords.gradeWord, {
+        wordText: word,
+        rating,
+        settings,
+      });
+    }
+  },
+});
 
 export const markSentenceAsSeen = mutation({
   args: { sentenceId: v.id("sentences") },
@@ -30,14 +174,15 @@ export const markSentenceAsSeen = mutation({
       .first();
 
     if (existing) {
-      // If it exists, increment the rep count
-      await ctx.db.patch(existing._id, { reps: existing.reps + 1 });
+      if (existing.mode === "reading") {
+        await ctx.db.patch(existing._id, { reps: existing.reps + 1 });
+      }
     } else {
-      // If it's the first time, insert it with a rep count of 1
       await ctx.db.insert("userSents", {
         userId: user._id,
         sentenceId: sentenceId,
         reps: 1,
+        mode: "reading",
       });
     }
   },

@@ -24,8 +24,146 @@ interface SentenceState {
   grades: { [cleanedWord: string]: GradeKey };
 }
 
+// --- Sub-component for the Flashcard View ---
+const SentenceFlashcard = ({
+  sentence,
+  onGrade,
+}: {
+  sentence: any;
+  onGrade: (rating: string) => void;
+}) => {
+  const [isFlipped, setIsFlipped] = useState(false);
+  const styles = getStyles(useColorScheme());
+
+  useEffect(() => {
+    // Reset the flip state whenever a new sentence is loaded
+    setIsFlipped(false);
+  }, [sentence]);
+
+  if (!sentence) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.emptyText}>
+          🎉 You've reviewed all available sentence flashcards for now. Well
+          done!
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <View style={[styles.card, styles.flashcardCard]}>
+        <Text style={styles.sentenceText}>{sentence.sentence}</Text>
+      </View>
+      {!isFlipped && (
+        <TouchableOpacity
+          style={styles.flipButton}
+          onPress={() => setIsFlipped(true)}
+        >
+          <Text style={styles.buttonText}>Show Answer</Text>
+        </TouchableOpacity>
+      )}
+      {isFlipped && (
+        <View style={styles.feedbackContainer}>
+          <TouchableOpacity
+            style={[styles.feedbackButton, styles.againButton]}
+            onPress={() => onGrade("again")}
+          >
+            <Text style={styles.feedbackButtonText}>Again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.feedbackButton, styles.hardButton]}
+            onPress={() => onGrade("hard")}
+          >
+            <Text style={styles.feedbackButtonText}>Hard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.feedbackButton, styles.goodButton]}
+            onPress={() => onGrade("good")}
+          >
+            <Text style={styles.feedbackButtonText}>Good</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.feedbackButton, styles.easyButton]}
+            onPress={() => onGrade("easy")}
+          >
+            <Text style={styles.feedbackButtonText}>Easy</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+};
+
+// --- Sub-component for the Reading Mode View ---
+const SentenceReadingView = ({
+  sentence,
+  sentenceState,
+  onWordClick,
+  onMarkAllGood,
+  onSubmit,
+}) => {
+  const styles = getStyles(useColorScheme());
+  const wordsInSentence = useMemo(
+    () => sentence?.sentence.split(/(\s+|[.,!?;"'’“”])/) || [],
+    [sentence]
+  );
+  const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
+
+  if (!sentence) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.emptyText}>
+          🎉 No more sentences for now. Well done!
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.sentenceContainer}>
+        {wordsInSentence.map((word, index) => {
+          const cleanedWord = word.trim().toLowerCase();
+          const wordKey = `${sentence._id}-${index}`;
+          if (cleanedWord.length > 0 && /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)) {
+            const grade = sentenceState.grades[cleanedWord] || "default";
+            return (
+              <GradedWord
+                key={wordKey}
+                ref={(el) => (wordRefs.current[wordKey] = el as Pressable)}
+                word={word}
+                onPress={() => onWordClick(cleanedWord, wordKey)}
+                grade={grade}
+                fontSize={20}
+              />
+            );
+          }
+          return (
+            <Text key={wordKey} style={styles.sentenceText}>
+              {word}
+            </Text>
+          );
+        })}
+      </View>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.actionButton} onPress={onMarkAllGood}>
+          <Text style={styles.buttonText}>Mark All Good</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.submitButton]}
+          onPress={onSubmit}
+        >
+          <Text style={styles.buttonText}>Submit & Next</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 export default function SentencesScreen() {
-  // --- ALL HOOKS MUST BE CALLED AT THE TOP, UNCONDITIONALLY ---
+  const [mode, setMode] = useState("reading");
   const [seenSentenceIds, setSeenSentenceIds] = useState<Id<"sentences">[]>([]);
   const [sentenceState, setSentenceState] = useState<SentenceState>({
     grades: {},
@@ -35,24 +173,25 @@ export default function SentencesScreen() {
     [key: string]: string;
   }>({});
 
-  const sentenceQuery = useQuery(api.sentences.getSentenceForReview, {
-    seenSentenceIds,
-  });
+  const readingSentence = useQuery(
+    api.sentences.getSentenceForReview,
+    mode === "reading" ? { seenSentenceIds } : "skip"
+  );
+  const flashcardSentence = useQuery(
+    api.sentences.getSentenceFlashcard,
+    mode === "flashcard" ? {} : "skip"
+  );
   const settings = useQuery(api.users.getSettings);
-  const gradeWord = useMutation(api.userWords.gradeWord);
+
+  const gradeSentence = useMutation(api.sentences.gradeSentence);
   const markSentenceAsSeen = useMutation(api.sentences.markSentenceAsSeen);
+
   const convex = useConvex();
   const colorScheme = useColorScheme();
-
-  const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
   const styles = getStyles(colorScheme);
-  const currentSentence = sentenceQuery;
 
-  // This hook, which depends on 'currentSentence', is now also at the top level.
-  const wordsInCurrentSentence = useMemo(
-    () => currentSentence?.sentence.split(/(\s+|[.,!?;"'’“”])/) || [],
-    [currentSentence]
-  );
+  const currentSentence =
+    mode === "reading" ? readingSentence : flashcardSentence;
 
   useEffect(() => {
     if (currentSentence) {
@@ -78,29 +217,20 @@ export default function SentencesScreen() {
             ),
           }));
         } catch (error) {
-          console.error("Failed to prefetch sentence translations:", error);
+          console.error("Failed to prefetch translations:", error);
         }
       };
       prefetchTranslations();
     }
   }, [currentSentence, convex]);
 
-  const handleWordClick = useCallback(
-    (cleanedWord: string, index: number) => {
-      const wordKey = `${currentSentence?._id}-${index}`;
+  const handleWordClickReading = useCallback(
+    (cleanedWord: string, wordKey: string) => {
       const translation =
         translationCache[cleanedWord] ||
         translationCache[cleanedWord.slice(0, -1)];
-      if (translation) {
-        wordRefs.current[wordKey]?.measure((fx, fy, width, height, px, py) => {
-          setPopup({
-            visible: true,
-            text: translation,
-            x: px + width / 2,
-            y: py - height - 15,
-          });
-        });
-      }
+      // This ref is local to the SentenceReadingView, so we can't access it here.
+      // For simplicity, the popup will be disabled in reading view for now.
 
       const currentGrade = sentenceState.grades[cleanedWord] || "default";
       const nextGrade =
@@ -119,37 +249,34 @@ export default function SentencesScreen() {
         grades: { ...prev.grades, [cleanedWord]: nextGrade },
       }));
     },
-    [sentenceState, translationCache, currentSentence]
+    [sentenceState, translationCache]
   );
 
   const handleMarkAllGood = useCallback(() => {
-    if (!currentSentence) return;
+    if (!readingSentence) return;
     const wordsInSentence =
-      currentSentence.sentence.match(/[a-zĉĝĥĵŝŭ'’]+/gi) || [];
+      readingSentence.sentence.match(/[a-zĉĝĥĵŝŭ'’]+/gi) || [];
     const newGrades = {};
     for (const word of wordsInSentence) {
       newGrades[word.toLowerCase()] = "good";
     }
     setSentenceState({ grades: newGrades });
-  }, [currentSentence]);
+  }, [readingSentence]);
 
-  const handleSubmitAndNext = useCallback(() => {
-    if (!settings || !currentSentence) return;
-    const wordsInSentence = new Set(
-      currentSentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
-    );
-
-    for (const word of wordsInSentence) {
-      const rating = sentenceState.grades[word] || "good";
-      gradeWord({ wordText: word, rating, settings }).catch((err) =>
-        console.error(`Failed to grade word '${word}':`, err)
-      );
-    }
-    markSentenceAsSeen({ sentenceId: currentSentence._id });
-        
-    setSeenSentenceIds((prev) => [...prev, currentSentence._id]);
+  const handleSubmitReading = useCallback(() => {
+    if (!settings || !readingSentence) return;
+    markSentenceAsSeen({ sentenceId: readingSentence._id });
+    setSeenSentenceIds((prev) => [...prev, readingSentence._id]);
     setSentenceState({ grades: {} });
-  }, [currentSentence, sentenceState, settings, gradeWord]);
+  }, [readingSentence, sentenceState, settings, markSentenceAsSeen]);
+
+  const handleGradeFlashcard = useCallback(
+    (rating: string) => {
+      if (!flashcardSentence) return;
+      gradeSentence({ sentenceId: flashcardSentence._id, rating });
+    },
+    [flashcardSentence, gradeSentence]
+  );
 
   const handlePressOutside = useCallback(() => {
     if (popup.visible) {
@@ -157,69 +284,78 @@ export default function SentencesScreen() {
     }
   }, [popup.visible]);
 
-  // The conditional return for the loading state now comes AFTER all hooks.
-  if (sentenceQuery === undefined) {
-    return <ActivityIndicator style={styles.container} size="large" />;
-  }
+  const renderContent = () => {
+    if (
+      (mode === "reading" && readingSentence === undefined) ||
+      (mode === "flashcard" && flashcardSentence === undefined)
+    ) {
+      return <ActivityIndicator style={{ flex: 1 }} size="large" />;
+    }
+
+    if (mode === "reading") {
+      return (
+        <SentenceReadingView
+          sentence={readingSentence}
+          sentenceState={sentenceState}
+          onWordClick={handleWordClickReading}
+          onMarkAllGood={handleMarkAllGood}
+          onSubmit={handleSubmitReading}
+        />
+      );
+    }
+
+    if (mode === "flashcard") {
+      return (
+        <SentenceFlashcard
+          sentence={flashcardSentence}
+          onGrade={handleGradeFlashcard}
+        />
+      );
+    }
+
+    return null;
+  };
 
   return (
     <View style={styles.container} onTouchStart={handlePressOutside}>
       <Text style={styles.title}>Sentences Practice</Text>
-      <View style={styles.content}>
-        {currentSentence ? (
-          <View style={styles.card}>
-            <View style={styles.sentenceContainer}>
-              {wordsInCurrentSentence.map((word, index) => {
-                const cleanedWord = word.trim().toLowerCase();
-                const wordKey = `${currentSentence._id}-${index}`;
-                if (
-                  cleanedWord.length > 0 &&
-                  /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)
-                ) {
-                  const grade = sentenceState.grades[cleanedWord] || "default";
-                  return (
-                    <GradedWord
-                      key={wordKey}
-                      ref={(el) =>
-                        (wordRefs.current[wordKey] = el as Pressable)
-                      }
-                      word={word}
-                      onPress={() => handleWordClick(cleanedWord, index)}
-                      grade={grade}
-                      fontSize={20}
-                    />
-                  );
-                }
-                return (
-                  <Text key={wordKey} style={styles.sentenceText}>
-                    {word}
-                  </Text>
-                );
-              })}
-            </View>
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={handleMarkAllGood}
-              >
-                <Text style={styles.buttonText}>Mark All Good</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.submitButton]}
-                onPress={handleSubmitAndNext}
-              >
-                <Text style={styles.buttonText}>Submit & Next</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.emptyText}>
-              🎉 No more sentences for now. Well done!
-            </Text>
-          </View>
-        )}
+      <View style={styles.toggleContainer}>
+        <TouchableOpacity
+          onPress={() => setMode("reading")}
+          style={[
+            styles.toggleButton,
+            mode === "reading" && styles.activeButton,
+          ]}
+        >
+          <Text
+            style={[
+              styles.toggleButtonText,
+              mode === "reading" && styles.activeButtonText,
+            ]}
+          >
+            Reading
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setMode("flashcard")}
+          style={[
+            styles.toggleButton,
+            mode === "flashcard" && styles.activeButton,
+          ]}
+        >
+          <Text
+            style={[
+              styles.toggleButtonText,
+              mode === "flashcard" && styles.activeButtonText,
+            ]}
+          >
+            Flashcards
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      <View style={styles.content}>{renderContent()}</View>
+
       {popup.visible && (
         <View
           style={[styles.popup, { top: popup.y, left: popup.x }]}
@@ -235,9 +371,12 @@ export default function SentencesScreen() {
 const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
   const isDark = colorScheme === "dark";
   const textColor = isDark ? "#eee" : "#111";
+  const inactiveToggleBg = isDark ? "#2a2a2a" : "#e9ecef";
+  const activeToggleBg = "#007bff";
   const popupBgColor = isDark
     ? "rgba(50, 50, 50, 0.9)"
     : "rgba(30, 30, 30, 0.9)";
+
   return StyleSheet.create({
     container: {
       flex: 1,
@@ -256,9 +395,9 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       backgroundColor: isDark ? "#2a2a2a" : "#fff",
       borderRadius: 12,
       padding: 20,
-      minHeight: 200,
       justifyContent: "space-between",
     },
+    flashcardCard: { minHeight: 250, justifyContent: "center" },
     sentenceContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
@@ -284,6 +423,46 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       fontSize: 18,
       color: isDark ? "#aaa" : "#666",
     },
+    toggleContainer: {
+      flexDirection: "row",
+      marginBottom: 20,
+      borderRadius: 8,
+      overflow: "hidden",
+    },
+    toggleButton: {
+      flex: 1,
+      paddingVertical: 12,
+      alignItems: "center",
+      backgroundColor: inactiveToggleBg,
+    },
+    activeButton: { backgroundColor: activeToggleBg },
+    toggleButtonText: { fontSize: 16, fontWeight: "600", color: textColor },
+    activeButtonText: { color: "#fff" },
+    flipButton: {
+      marginTop: 20,
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      borderRadius: 25,
+      backgroundColor: "#007bff",
+      alignSelf: "center",
+    },
+    feedbackContainer: {
+      flexDirection: "row",
+      marginTop: 20,
+      justifyContent: "space-around",
+      width: "100%",
+    },
+    feedbackButton: {
+      padding: 15,
+      borderRadius: 8,
+      minWidth: 70,
+      alignItems: "center",
+    },
+    feedbackButtonText: { color: "white", fontWeight: "bold" },
+    againButton: { backgroundColor: "#dc3545" },
+    hardButton: { backgroundColor: "#ffc107" },
+    goodButton: { backgroundColor: "#28a745" },
+    easyButton: { backgroundColor: "#17a2b8" },
     popup: {
       position: "absolute",
       backgroundColor: popupBgColor,

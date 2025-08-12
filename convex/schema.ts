@@ -1,4 +1,3 @@
-// convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -44,7 +43,9 @@ export default defineSchema({
     tokenIdentifier: v.string(),
     lastSession: v.optional(v.number()),
     newCardsSeenToday: v.optional(v.number()),
-    lastResetDate: v.optional(v.string()), // Added for daily resets
+    lastResetDate: v.optional(v.string()),
+    // --- ADDED FIELD ---
+    maxSentRangeIndex: v.optional(v.number()), // Tracks sentence flashcard progress
     settings: v.optional(
       v.object({
         request_retention: v.float64(),
@@ -62,6 +63,7 @@ export default defineSchema({
     title: v.string(),
     content: v.string(),
   }),
+
   sentences: defineTable({
     sentence: v.string(),
     range: v.optional(v.float64()),
@@ -72,9 +74,20 @@ export default defineSchema({
     avg_rank: v.optional(v.float64()),
     path: v.optional(v.string()),
   }).index("by_rangeIndex", ["rangeIndex"]),
+
+  // --- MODIFIED TABLE ---
   userSents: defineTable({
     userId: v.id("users"),
     sentenceId: v.id("sentences"),
-    reps: v.number(),   
+    reps: v.number(),
+    mode: v.string(), 
+    due: v.optional(v.number()),
+    stability: v.optional(v.float64()),
+    difficulty: v.optional(v.float64()),
+    elapsed_days: v.optional(v.float64()),
+    scheduled_days: v.optional(v.float64()),
+    lapses: v.optional(v.float64()),
+    state: v.optional(v.number()),
+    last_review: v.optional(v.number()),
   }).index("by_user_sent", ["userId", "sentenceId"]),
 });
