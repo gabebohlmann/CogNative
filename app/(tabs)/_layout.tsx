@@ -51,18 +51,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="stats"
-        options={{
-          title: "Stats",
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon
-              name={focused ? "bar-chart" : "bar-chart-outline"}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="deckBrowser"
         options={{
           title: "Deck",
@@ -85,7 +73,7 @@ export default function TabLayout() {
             />
           ),
         }}
-      />  
+      />
       <Tabs.Screen
         name="settings"
         options={{
@@ -97,7 +85,19 @@ export default function TabLayout() {
             />
           ),
         }}
-      />          
+      />
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: "Stats",
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon
+              name={focused ? "bar-chart" : "bar-chart-outline"}
+              color={color}
+            />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
