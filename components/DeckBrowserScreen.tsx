@@ -6,14 +6,12 @@ import {
   ActivityIndicator,
   useColorScheme,
   TouchableOpacity,
-  ScrollView,
   TextInput,
 } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { FlashList } from "@shopify/flash-list";
 
-// --- Custom hook to debounce user input for performance ---
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
   useEffect(() => {
@@ -29,26 +27,23 @@ function useDebounce<T>(value: T, delay: number): T {
 
 // --- COLUMN CONFIGURATIONS ---
 const wordColumns = [
-  {
-    key: "word",
-    title: "Word",
-    flex: 2.5,
-    isSortable: false,
-    render: WordCell,
-  },
+  { key: "word", title: "Word", flex: 2.5, isSortable: true, render: WordCell },
   { key: "due", title: "Due", flex: 1, isSortable: true },
-  { key: "state", title: "State", flex: 1.2, isSortable: false },
-  { key: "reps", title: "Reps", flex: 0.8, isSortable: false },
+  { key: "state", title: "State", flex: 1.2, isSortable: true },
+  { key: "reps", title: "Reps", flex: 0.8, isSortable: true },
   { key: "rangeIndex", title: "Range", flex: 1, isSortable: true },
   { key: "freqIndex", title: "Freq", flex: 1, isSortable: true },
 ];
 
 const sentenceColumns = [
-  { key: "text", title: "Sentence", flex: 3, isSortable: false },
-  { key: "due", title: "Due", flex: 1, isSortable: false },
-  { key: "state", title: "State", flex: 1.2, isSortable: false },
-  { key: "reps", title: "Reps", flex: 0.8, isSortable: false },
-  { key: "avg_rank", title: "Avg Rank", flex: 1.2, isSortable: false },
+  { key: "text", title: "Sentence", flex: 3, isSortable: true },
+  { key: "due", title: "Due", flex: 1, isSortable: true },
+  { key: "state", title: "State", flex: 1.2, isSortable: true },
+  { key: "reps", title: "Reps", flex: 0.8, isSortable: true },
+  // --- MODIFICATION: Make these columns sortable ---
+  { key: "rangeIndex", title: "Range", flex: 1, isSortable: true },
+  { key: "freqIndex", title: "Freq", flex: 1, isSortable: true },
+  { key: "avg_rank", title: "Avg Rank", flex: 1.2, isSortable: true },
 ];
 
 function WordCell({ item }) {
@@ -61,7 +56,6 @@ function WordCell({ item }) {
   );
 }
 
-// --- REUSABLE TABLE COMPONENT ---
 const TableView = ({
   columns,
   data,
@@ -70,10 +64,12 @@ const TableView = ({
   estimatedItemSize = 60,
 }) => {
   const styles = getStyles(useColorScheme());
+
   const getDirectionIndicator = (key) => {
     if (!sortConfig || sortConfig.key !== key) return null;
     return sortConfig.direction === "ascending" ? " ▲" : " ▼";
   };
+
   const TableRow = React.memo(({ item, index }) => {
     const isEvenRow = index % 2 === 0;
     return (
@@ -97,6 +93,7 @@ const TableView = ({
       </View>
     );
   });
+
   return (
     <View style={{ flex: 1 }}>
       <View style={[styles.tableRow, styles.tableHeader]}>
@@ -141,9 +138,13 @@ export default function DeckBrowserScreen() {
     sortDirection: sortConfig.direction,
     filter: debouncedFilter || undefined,
   });
+
   const seenSentences = useQuery(api.deck.getSeenSentences, {
     filter: debouncedFilter || undefined,
+    sortBy: sortConfig.key,
+    sortDirection: sortConfig.direction,
   });
+
   const styles = getStyles(useColorScheme());
 
   const handleSort = useCallback((key: string) => {
@@ -171,7 +172,14 @@ export default function DeckBrowserScreen() {
     } else {
       if (seenSentences === undefined)
         return <ActivityIndicator style={{ flex: 1 }} size="large" />;
-      return <TableView columns={sentenceColumns} data={seenSentences} />;
+      return (
+        <TableView
+          columns={sentenceColumns}
+          data={seenSentences}
+          sortConfig={sortConfig}
+          requestSort={handleSort}
+        />
+      );
     }
   };
 
@@ -193,10 +201,10 @@ export default function DeckBrowserScreen() {
             styles.toggleButton,
             activeView === "words" && styles.activeButton,
           ]}
-          // MODIFICATION: Added setFilterText('') to clear the filter on view change.
           onPress={() => {
             setActiveView("words");
             setFilterText("");
+            setSortConfig({ key: "default", direction: "ascending" });
           }}
         >
           <Text
@@ -213,10 +221,10 @@ export default function DeckBrowserScreen() {
             styles.toggleButton,
             activeView === "sentences" && styles.activeButton,
           ]}
-          // MODIFICATION: Added setFilterText('') to clear the filter on view change.
           onPress={() => {
             setActiveView("sentences");
             setFilterText("");
+            setSortConfig({ key: "reps", direction: "descending" });
           }}
         >
           <Text

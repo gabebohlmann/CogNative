@@ -1,7 +1,12 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 
-const State = { New: 0, Learning: 1, Review: 2, Relearning: 3 };
+const State = {
+  New: 0,
+  Learning: 1,
+  Review: 2,
+  Relearning: 3,
+};
 
 async function getUser(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -40,50 +45,99 @@ function mapStateToString(state: number): string {
 }
 
 export const getSeenSentences = query({
-  args: { filter: v.optional(v.string()) },
-  handler: async (ctx, { filter }) => {
+  args: {
+    filter: v.optional(v.string()),
+    sortBy: v.optional(v.string()),
+    sortDirection: v.optional(v.string()),
+  },
+  handler: async (ctx, { filter, sortBy, sortDirection }) => {
     const user = await getUser(ctx);
     if (!user) return [];
+
     const userSents = await ctx.db
       .query("userSents")
       .withIndex("by_user_sent", (q) => q.eq("userId", user._id))
       .collect();
-    let sentencesData = await Promise.all(
-      userSents.map(async (us) => {
-        const sentenceDoc = await ctx.db.get(us.sentenceId);
-        if (!sentenceDoc) return null;
-        if (us.mode === "flashcard" && us.due && us.state !== undefined) {
-          return {
-            _id: us._id.toString(),
-            text: sentenceDoc.sentence,
-            due: formatDueDate(us.due),
-            state: mapStateToString(us.state),
-            reps: us.reps,
-            rangeIndex: sentenceDoc.rangeIndex ?? "N/A",
-            freqIndex: sentenceDoc.freqIndex ?? "N/A",
-            avg_rank: sentenceDoc.avg_rank?.toFixed(1) ?? "N/A",
-          };
-        } else {
-          return {
-            _id: us._id.toString(),
-            text: sentenceDoc.sentence,
-            due: "N/A",
-            state: "Read",
-            reps: us.reps,
-            rangeIndex: sentenceDoc.rangeIndex ?? "N/A",
-            freqIndex: sentenceDoc.freqIndex ?? "N/A",
-            avg_rank: sentenceDoc.avg_rank?.toFixed(1) ?? "N/A",
-          };
-        }
-      })
-    );
-    let finalData = sentencesData.filter(Boolean);
+
+    let combinedData = (
+      await Promise.all(
+        userSents.map(async (us) => {
+          const sentenceDoc = await ctx.db.get(us.sentenceId);
+          return sentenceDoc ? { userSent: us, sentenceDoc } : null;
+        })
+      )
+    ).filter(Boolean);
+
     if (filter) {
-      finalData = finalData.filter((item) =>
-        item.text.toLowerCase().includes(filter.toLowerCase())
+      combinedData = combinedData.filter((item) =>
+        item.sentenceDoc.sentence.toLowerCase().includes(filter.toLowerCase())
       );
     }
-    return finalData.sort((a, b) => (b.reps || 0) - (a.reps || 0));
+
+    combinedData.sort((a, b) => {
+      const dir = sortDirection === "ascending" ? 1 : -1;
+      let valA, valB;
+      switch (sortBy) {
+        case "text":
+          return (
+            a.sentenceDoc.sentence
+              .toLowerCase()
+              .localeCompare(b.sentenceDoc.sentence.toLowerCase()) * dir
+          );
+        case "due":
+          valA = a.userSent.due ?? Infinity;
+          valB = b.userSent.due ?? Infinity;
+          break;
+        case "state":
+          valA = mapStateToString(a.userSent.state ?? -1);
+          valB = mapStateToString(b.userSent.state ?? -1);
+          return valA.localeCompare(valB) * dir;
+        case "reps":
+          valA = a.userSent.reps;
+          valB = b.userSent.reps;
+          break;
+        // --- ADDED: Sorting cases for range and freq ---
+        case "rangeIndex":
+          valA = a.sentenceDoc.rangeIndex ?? Infinity;
+          valB = b.sentenceDoc.rangeIndex ?? Infinity;
+          break;
+        case "freqIndex":
+          valA = a.sentenceDoc.freqIndex ?? Infinity;
+          valB = b.sentenceDoc.freqIndex ?? Infinity;
+          break;
+        case "avg_rank":
+          valA = a.sentenceDoc.avg_rank ?? Infinity;
+          valB = b.sentenceDoc.avg_rank ?? Infinity;
+          break;
+        default: // Default sort by reps descending
+          return (b.userSent.reps || 0) - (a.userSent.reps || 0);
+      }
+      return (valA - valB) * dir;
+    });
+
+    return combinedData.map(({ userSent, sentenceDoc }) => {
+      const baseData = {
+        _id: userSent._id.toString(),
+        text: sentenceDoc.sentence,
+        reps: userSent.reps,
+        rangeIndex: sentenceDoc.rangeIndex ?? "N/A",
+        freqIndex: sentenceDoc.freqIndex ?? "N/A",
+        avg_rank: sentenceDoc.avg_rank?.toFixed(1) ?? "N/A",
+      };
+      if (
+        userSent.mode === "flashcard" &&
+        userSent.due &&
+        userSent.state !== undefined
+      ) {
+        return {
+          ...baseData,
+          due: formatDueDate(userSent.due),
+          state: mapStateToString(userSent.state),
+        };
+      } else {
+        return { ...baseData, due: "N/A", state: "Read" };
+      }
+    });
   },
 });
 
@@ -114,6 +168,7 @@ export const getDeckWords = query({
       );
     }
     combinedData.sort((a, b) => {
+      const dir = sortDirection === "ascending" ? 1 : -1;
       let valA, valB;
       if (sortBy === "default") {
         const dueDiff = a.userWord.due - b.userWord.due;
@@ -135,13 +190,22 @@ export const getDeckWords = query({
           valA = a.word.freqIndex ?? Infinity;
           valB = b.word.freqIndex ?? Infinity;
           break;
+        case "reps":
+          valA = a.userWord.reps;
+          valB = b.userWord.reps;
+          break;
+        case "state":
+          valA = mapStateToString(a.userWord.state);
+          valB = mapStateToString(b.userWord.state);
+          return valA.localeCompare(valB) * dir;
+        case "word":
+          valA = a.word.esperanto.toLowerCase();
+          valB = b.word.esperanto.toLowerCase();
+          return valA.localeCompare(valB) * dir;
         default:
-          valA = a.word.esperanto;
-          valB = b.word.esperanto;
+          return 0;
       }
-      if (valA < valB) return sortDirection === "ascending" ? -1 : 1;
-      if (valA > valB) return sortDirection === "ascending" ? 1 : -1;
-      return 0;
+      return (valA - valB) * dir;
     });
     return combinedData.map(({ userWord, word }) => ({
       _id: userWord._id.toString(),

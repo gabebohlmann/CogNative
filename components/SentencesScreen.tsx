@@ -1,3 +1,4 @@
+// components/SentencesScreen.tsx
 import React, {
   useState,
   useMemo,
