@@ -65,6 +65,110 @@ function formatDueDate(date: Date): string {
   return `${Math.round(diffMs / (1000 * 60 * 60 * 24))}d`;
 }
 
+export const getReadingSentenceQueue = query({
+  args: { limit: v.number() },
+  handler: async (ctx, { limit }) => {
+    const user = await getUser(ctx);
+    if (!user) return [];
+
+    // 1. Get all user knowledge
+    const allUserWords = await ctx.db
+      .query("userWords")
+      .withIndex("by_user_word", (q) => q.eq("userId", user._id))
+      .collect();
+    const wordDocs = await Promise.all(
+      allUserWords.map((uw) => ctx.db.get(uw.wordId))
+    );
+    const userWordMap = new Map(
+      allUserWords.map((uw, i) => [wordDocs[i]?.esperanto, uw])
+    );
+    const knownWords = new Set(userWordMap.keys());
+    const dueWords = new Set();
+    userWordMap.forEach((userWord, word) => {
+      if (userWord.due <= Date.now()) {
+        dueWords.add(word);
+      }
+    });
+
+    // 2. Fetch all sentences
+    const allSentences = await ctx.db.query("sentences").collect();
+    const queue: (typeof allSentences)[0][] = [];
+    const seenInQueue = new Set<Id<"sentences">>();
+
+    // 3. Phase 1: Find all sentences with due words and add the best ones
+    if (dueWords.size > 0) {
+      const dueSentences = allSentences
+        .map((sentence) => {
+          const wordsInSentence = new Set(
+            sentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
+          );
+          if (wordsInSentence.size === 0) return { sentence, score: 0 };
+          const dueWordCount = [...wordsInSentence].filter((word) =>
+            dueWords.has(word)
+          ).length;
+          return { sentence, score: dueWordCount / wordsInSentence.size };
+        })
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      for (const { sentence } of dueSentences) {
+        if (queue.length >= limit) break;
+        if (!seenInQueue.has(sentence._id)) {
+          queue.push(sentence);
+          seenInQueue.add(sentence._id);
+        }
+      }
+    }
+
+    // 4. Phase 2: If queue is not full, fill with new-word sentences
+    if (queue.length < limit) {
+      const allWordsSorted = await ctx.db
+        .query("words")
+        .withIndex("by_rangeIndex")
+        .order("asc")
+        .collect();
+      let wordIdx = 0;
+
+      while (queue.length < limit && wordIdx < allWordsSorted.length) {
+        // Find the next new word to learn
+        let nextNewWord = null;
+        while (wordIdx < allWordsSorted.length) {
+          const word = allWordsSorted[wordIdx];
+          if (!knownWords.has(word.esperanto)) {
+            nextNewWord = word;
+            break;
+          }
+          wordIdx++;
+        }
+
+        if (!nextNewWord) break; // No more new words to learn
+
+        // Find the best sentence for this new word
+        const candidateSentences = allSentences.filter(
+          (s) =>
+            !seenInQueue.has(s._id) &&
+            new Set(
+              s.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
+            ).has(nextNewWord!.esperanto)
+        );
+
+        if (candidateSentences.length > 0) {
+          candidateSentences.sort((a, b) => {
+            /* ... (sorting logic from before) ... */
+          });
+          const bestSentence = candidateSentences[0];
+          queue.push(bestSentence);
+          seenInQueue.add(bestSentence._id);
+          // Add the new word to our temporary known set to avoid picking it again in this loop
+          knownWords.add(nextNewWord.esperanto);
+        }
+        wordIdx++;
+      }
+    }
+    return queue;
+  },
+});
+
 // --- Queries and Mutations ---
 export const getSentenceFlashcardQueue = query({
   args: { limit: v.number() },

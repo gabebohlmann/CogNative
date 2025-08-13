@@ -1,4 +1,3 @@
-// components/SentencesScreen.tsx
 import React, {
   useState,
   useMemo,
@@ -94,13 +93,11 @@ const SentenceReadingView = ({
 // --- Sub-component for the Flashcard View ---
 const SentenceFlashcard = ({ onGrade }) => {
   const [sentenceQueue, setSentenceQueue] = useState<any[] | null>(null);
-  // This query fetches the smart queue of cards to review
   const sentenceCardData = useQuery(api.sentences.getSentenceFlashcardQueue, {
     limit: 15,
   });
 
   useEffect(() => {
-    // Load the fetched queue into local state once.
     if (sentenceCardData) {
       setSentenceQueue(sentenceCardData);
     }
@@ -113,7 +110,6 @@ const SentenceFlashcard = ({ onGrade }) => {
     // Optimistic update: remove card from local queue instantly for a fast UI
     setSentenceQueue((q) => (q ? q.slice(1) : []));
 
-    // Call the parent's grade function for the backend update
     onGrade(currentCard._id, rating);
   };
 
@@ -133,7 +129,6 @@ const SentenceFlashcard = ({ onGrade }) => {
 
 export default function SentencesScreen() {
   const [mode, setMode] = useState("reading");
-  const [seenSentenceIds, setSeenSentenceIds] = useState<Id<"sentences">[]>([]);
   const [sentenceState, setSentenceState] = useState<SentenceState>({
     grades: {},
   });
@@ -142,10 +137,18 @@ export default function SentencesScreen() {
     [key: string]: string;
   }>({});
 
-  const readingSentence = useQuery(
-    api.sentences.getSentenceForReview,
-    mode === "reading" ? { seenSentenceIds } : "skip"
+  // --- State and Query for Reading Mode Queue ---
+  const [readingQueue, setReadingQueue] = useState<any[] | null>(null);
+  const readingSentenceData = useQuery(
+    api.sentences.getReadingSentenceQueue,
+    mode === "reading" ? { limit: 15 } : "skip"
   );
+
+  useEffect(() => {
+    if (readingSentenceData) {
+      setReadingQueue(readingSentenceData);
+    }
+  }, [readingSentenceData]);
 
   const settings = useQuery(api.users.getSettings);
   const gradeSentence = useMutation(api.sentences.gradeSentence);
@@ -156,13 +159,15 @@ export default function SentencesScreen() {
   const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
   const styles = getStyles(colorScheme);
 
-  const currentSentence = readingSentence; // Only for reading mode context
+  const currentReadingSentence = readingQueue ? readingQueue[0] : null;
 
   useEffect(() => {
-    if (currentSentence && currentSentence.sentence) {
+    if (currentReadingSentence && currentReadingSentence.sentence) {
       const uniqueWords = Array.from(
         new Set(
-          currentSentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
+          currentReadingSentence.sentence
+            .toLowerCase()
+            .match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
         )
       );
       const prefetchTranslations = async () => {
@@ -184,7 +189,7 @@ export default function SentencesScreen() {
       };
       prefetchTranslations();
     }
-  }, [currentSentence, convex]);
+  }, [currentReadingSentence, convex]);
 
   const handleWordClickReading = useCallback(
     (cleanedWord: string, wordKey: string) => {
@@ -222,22 +227,22 @@ export default function SentencesScreen() {
   );
 
   const handleMarkAllGood = useCallback(() => {
-    if (!currentSentence) return;
+    if (!currentReadingSentence) return;
     const wordsInSentence =
-      currentSentence.sentence.match(/[a-zĉĝĥĵŝŭ'’]+/gi) || [];
+      currentReadingSentence.sentence.match(/[a-zĉĝĥĵŝŭ'’]+/gi) || [];
     const newGrades = {};
     for (const word of wordsInSentence) {
       newGrades[word.toLowerCase()] = "good";
     }
     setSentenceState({ grades: newGrades });
-  }, [currentSentence]);
+  }, [currentReadingSentence]);
 
   const handleSubmitReading = useCallback(() => {
-    if (!settings || !readingSentence) return;
-    markSentenceAsSeen({ sentenceId: readingSentence._id });
-    setSeenSentenceIds((prev) => [...prev, readingSentence._id]);
+    if (!settings || !currentReadingSentence) return;
+    markSentenceAsSeen({ sentenceId: currentReadingSentence._id });
+    setReadingQueue((q) => (q ? q.slice(1) : []));
     setSentenceState({ grades: {} });
-  }, [readingSentence, sentenceState, settings, markSentenceAsSeen]);
+  }, [currentReadingSentence, sentenceState, settings, markSentenceAsSeen]);
 
   const handleGradeFlashcard = useCallback(
     (sentenceId: Id<"sentences">, rating: string) => {
@@ -255,16 +260,13 @@ export default function SentencesScreen() {
   }, [popup.visible]);
 
   const renderContent = () => {
-    if (mode === "reading" && readingSentence === undefined) {
-      return <ActivityIndicator style={{ flex: 1 }} size="large" />;
-    }
-    if (mode === "flashcard") {
-      return <SentenceFlashcard onGrade={handleGradeFlashcard} />;
-    }
     if (mode === "reading") {
+      const isLoading = readingQueue === null;
+      if (isLoading)
+        return <ActivityIndicator style={{ flex: 1 }} size="large" />;
       return (
         <SentenceReadingView
-          sentence={readingSentence}
+          sentence={currentReadingSentence}
           sentenceState={sentenceState}
           onWordClick={handleWordClickReading}
           onMarkAllGood={handleMarkAllGood}
@@ -272,6 +274,9 @@ export default function SentencesScreen() {
           wordRefs={wordRefs}
         />
       );
+    }
+    if (mode === "flashcard") {
+      return <SentenceFlashcard onGrade={handleGradeFlashcard} />;
     }
     return null;
   };
@@ -408,3 +413,4 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     popupText: { color: "#fff", fontSize: 16, textAlign: "center" },
   });
 };
+            
