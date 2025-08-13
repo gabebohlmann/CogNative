@@ -37,92 +37,138 @@ function getFsrsInstance(settings: any): FSRS {
 
 function mapRating(rating: string): Rating {
   switch (rating) {
-    case "again": return Rating.Again;
-    case "hard": return Rating.Hard;
-    case "good": return Rating.Good;
-    case "easy": return Rating.Easy;
-    default: throw new Error(`Invalid rating: ${rating}`);
+    case "again":
+      return Rating.Again;
+    case "hard":
+      return Rating.Hard;
+    case "good":
+      return Rating.Good;
+    case "easy":
+      return Rating.Easy;
+    default:
+      throw new Error(`Invalid rating: ${rating}`);
   }
 }
 
 function getBaseWord(word: string): string {
-    if (word.endsWith("jn")) {
-        return word.slice(0, -2);
-    }
-    if (word.endsWith("j")) {
-        return word.slice(0, -1);
-    }
-    if (word.endsWith("n")) {
-        return word.slice(0, -1);
-    }
-    return word;
+  if (word.endsWith("jn")) {
+    return word.slice(0, -2);
+  }
+  if (word.endsWith("j")) {
+    return word.slice(0, -1);
+  }
+  if (word.endsWith("n")) {
+    return word.slice(0, -1);
+  }
+  return word;
 }
 
 // Shared FSRS Logic
-export async function gradeWordLogic(ctx: any, { userId, user, wordText, rating, settings }: { userId: Id<"users">, user: any, wordText: string, rating: string, settings: any }) {
-    const baseWordText = getBaseWord(wordText);
-    
-    let word = await ctx.db.query("words").withIndex("by_esperanto", (q) => q.eq("esperanto", wordText)).first();
-    if (!word) {
-      word = await ctx.db.query("words").withIndex("by_esperanto", (q) => q.eq("esperanto", baseWordText)).first();
-    }
+export async function gradeWordLogic(
+  ctx: any,
+  {
+    userId,
+    user,
+    wordText,
+    rating,
+    settings,
+  }: {
+    userId: Id<"users">;
+    user: any;
+    wordText: string;
+    rating: string;
+    settings: any;
+  }
+) {
+  const baseWordText = getBaseWord(wordText);
 
-    if (!word) {
-      console.warn(`Word "${wordText}" (base: "${baseWordText}") not found. Skipping.`);
-      return null;
-    }
+  let word = await ctx.db
+    .query("words")
+    .withIndex("by_esperanto", (q) => q.eq("esperanto", wordText))
+    .first();
+  if (!word) {
+    word = await ctx.db
+      .query("words")
+      .withIndex("by_esperanto", (q) => q.eq("esperanto", baseWordText))
+      .first();
+  }
 
-    const userWord = await ctx.db.query("userWords").withIndex("by_user_word", (q) => q.eq("userId", userId).eq("wordId", word!._id)).first();
-    const now = new Date();
-    const f = getFsrsInstance(settings);
-    const fsrsRating = mapRating(rating);
+  if (!word) {
+    console.warn(
+      `Word "${wordText}" (base: "${baseWordText}") not found. Skipping.`
+    );
+    return null;
+  }
 
-    let card: Card;
-    if (userWord) {
-      card = { ...userWord, due: new Date(userWord.due), last_review: userWord.last_review ? new Date(userWord.last_review) : undefined, state: userWord.state as State };
-    } else {
-      card = createEmptyCard(now);
-      await ctx.db.patch(user._id, {
-        newCardsSeenToday: (user.newCardsSeenToday ?? 0) + 1,
-        lastResetDate: now.toISOString().split("T")[0],
-      });
-    }
+  const userWord = await ctx.db
+    .query("userWords")
+    .withIndex("by_user_word", (q) =>
+      q.eq("userId", userId).eq("wordId", word!._id)
+    )
+    .first();
+  const now = new Date();
+  const f = getFsrsInstance(settings);
+  const fsrsRating = mapRating(rating);
 
-    const scheduling_cards = f.repeat(card, now);
-    const updatedCard = scheduling_cards[fsrsRating].card;
-
-    const dataToStore = {
-      userId: userId,
-      wordId: word._id,
-      due: updatedCard.due.getTime(),
-      stability: updatedCard.stability,
-      difficulty: updatedCard.difficulty,
-      elapsed_days: updatedCard.elapsed_days,
-      scheduled_days: updatedCard.scheduled_days,
-      reps: updatedCard.reps,
-      lapses: updatedCard.lapses,
-      state: updatedCard.state,
-      last_review: updatedCard.last_review!.getTime(),
+  let card: Card;
+  if (userWord) {
+    card = {
+      ...userWord,
+      due: new Date(userWord.due),
+      last_review: userWord.last_review
+        ? new Date(userWord.last_review)
+        : undefined,
+      state: userWord.state as State,
     };
+  } else {
+    card = createEmptyCard(now);
+    await ctx.db.patch(user._id, {
+      newCardsSeenToday: (user.newCardsSeenToday ?? 0) + 1,
+      lastResetDate: now.toISOString().split("T")[0],
+    });
+  }
 
-    if (userWord) {
-      await ctx.db.patch(userWord._id, dataToStore);
-      return { ...dataToStore, _id: userWord._id };
-    } else {
-      const newId = await ctx.db.insert("userWords", dataToStore);
-      return { ...dataToStore, _id: newId };
-    }
+  const scheduling_cards = f.repeat(card, now);
+  const updatedCard = scheduling_cards[fsrsRating].card;
+
+  const dataToStore = {
+    userId: userId,
+    wordId: word._id,
+    due: updatedCard.due.getTime(),
+    stability: updatedCard.stability,
+    difficulty: updatedCard.difficulty,
+    elapsed_days: updatedCard.elapsed_days,
+    scheduled_days: updatedCard.scheduled_days,
+    reps: updatedCard.reps,
+    lapses: updatedCard.lapses,
+    state: updatedCard.state,
+    last_review: updatedCard.last_review!.getTime(),
+  };
+
+  if (userWord) {
+    await ctx.db.patch(userWord._id, dataToStore);
+    return { ...dataToStore, _id: userWord._id };
+  } else {
+    const newId = await ctx.db.insert("userWords", dataToStore);
+    return { ...dataToStore, _id: newId };
+  }
 }
 
 export const gradeWordsAsGood = mutation({
-    args: { wordTexts: v.array(v.string()), settings: v.any() },
-    handler: async (ctx, { wordTexts, settings }) => {
-        const user = await getUser(ctx);
-        if (!user) throw new Error("User not authenticated.");
-        for (const wordText of wordTexts) {
-            await gradeWordLogic(ctx, { userId: user._id, user, wordText, rating: "good", settings });
-        }
+  args: { wordTexts: v.array(v.string()), settings: v.any() },
+  handler: async (ctx, { wordTexts, settings }) => {
+    const user = await getUser(ctx);
+    if (!user) throw new Error("User not authenticated.");
+    for (const wordText of wordTexts) {
+      await gradeWordLogic(ctx, {
+        userId: user._id,
+        user,
+        wordText,
+        rating: "good",
+        settings,
+      });
     }
+  },
 });
 
 export const gradeWord = mutation({
@@ -141,9 +187,17 @@ export const getUserWordsByText = query({
     if (!user) return [];
     const userWordsData: { word: string; data: any }[] = [];
     for (const baseWord of new Set(words)) {
-      const wordDoc = await ctx.db.query("words").withIndex("by_esperanto", (q) => q.eq("esperanto", baseWord)).first();
+      const wordDoc = await ctx.db
+        .query("words")
+        .withIndex("by_esperanto", (q) => q.eq("esperanto", baseWord))
+        .first();
       if (wordDoc) {
-        const userWord = await ctx.db.query("userWords").withIndex("by_user_word", (q) => q.eq("userId", user._id).eq("wordId", wordDoc._id)).first();
+        const userWord = await ctx.db
+          .query("userWords")
+          .withIndex("by_user_word", (q) =>
+            q.eq("userId", user._id).eq("wordId", wordDoc._id)
+          )
+          .first();
         if (userWord) {
           userWordsData.push({ word: baseWord, data: userWord });
         }
@@ -168,3 +222,4 @@ export const getTranslationsForStory = query({
     return translations;
   },
 });
+  

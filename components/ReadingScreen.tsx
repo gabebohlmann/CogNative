@@ -19,6 +19,13 @@ import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { GradedWord, GradeKey } from "./GradedWord";
 
+const getBaseWord = (word: string): string => {
+  if (word.endsWith("jn")) return word.slice(0, -2);
+  if (word.endsWith("j")) return word.slice(0, -1);
+  if (word.endsWith("n")) return word.slice(0, -1);
+  return word;
+};
+
 const MIN_FONT_SIZE = 14;
 const MAX_FONT_SIZE = 36;
 const DEFAULT_FONT_SIZE = 20;
@@ -70,11 +77,7 @@ export default function ReadingScreen() {
   const storyBaseWords = useMemo(() => {
     if (!story) return [];
     const words = story.content.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || [];
-    return Array.from(
-      new Set(
-        words.map((w) => (w.endsWith("n") && w.length > 1 ? w.slice(0, -1) : w))
-      )
-    );
+    return Array.from(new Set(words.map((w) => getBaseWord(w))));
   }, [story]);
 
   const initialUserWords = useQuery(
@@ -104,9 +107,12 @@ export default function ReadingScreen() {
       );
       const prefetchTranslations = async () => {
         try {
+          const baseWordsToFetch = Array.from(
+            new Set(uniqueWords.map((w) => getBaseWord(w)))
+          );
           const translationsArray = await convex.query(
             api.userWords.getTranslationsForStory,
-            { words: uniqueWords }
+            { words: baseWordsToFetch }
           );
           setTranslationCache(
             translationsArray.reduce(
@@ -134,6 +140,9 @@ export default function ReadingScreen() {
     lastSubmittedWordRef.current = null;
     if (sessionToCommit && settings) {
       try {
+        console.log(
+          `[COMMIT GRADE] Word: "${sessionToCommit.word}", Rating: "${sessionToCommit.rating}"`
+        );
         const result = await gradeWord({
           wordText: sessionToCommit.word,
           rating: sessionToCommit.rating,
@@ -154,61 +163,60 @@ export default function ReadingScreen() {
     }
   }, [gradeWord, settings]);
 
-  // --- MODIFICATION: This entire function is simplified and refactored ---
+  const processImpliedGoodGrades = useCallback(
+    async (startIndex: number, endIndex: number) => {
+      if (!settings || startIndex >= endIndex) return;
+      const wordsToGrade: string[] = [];
+      const batchUIUpdates: { [key: string]: WordInfo } = {};
+      for (let i = startIndex; i < endIndex; i++) {
+        const segment = storySegments[i];
+        if (!segment) continue;
+        const impliedCleanedWord = segment.trim().toLowerCase();
+        const impliedBaseWord = getBaseWord(impliedCleanedWord);
+        if (
+          impliedBaseWord.length > 0 &&
+          /^[a-zĉĝĥĵŝŭ'’]+$/.test(impliedBaseWord)
+        ) {
+          const impliedWordState = wordStates[impliedBaseWord];
+          if (
+            !impliedWordState ||
+            impliedWordState.grade === "default" ||
+            impliedWordState.grade === "good"
+          ) {
+            batchUIUpdates[impliedBaseWord] = { grade: "good", due: null };
+            wordsToGrade.push(impliedBaseWord);
+          }
+        }
+      }
+      if (wordsToGrade.length > 0) {
+        console.log(
+          `[IMPLIED GOOD] Grading ${wordsToGrade.length} words:`,
+          wordsToGrade
+        );
+        setWordStates((prev) => ({ ...prev, ...batchUIUpdates }));
+        await gradeWordsAsGood({ wordTexts: wordsToGrade, settings });
+      }
+    },
+    [storySegments, wordStates, settings, gradeWordsAsGood]
+  );
+
   const handleWordClick = useCallback(
     (cleanedWord: string, wordKey: string, clickedIndex: number) => {
-      // Step 1: Commit the grade for the PREVIOUS word if there was one.
+      const baseWord = getBaseWord(cleanedWord);
+
       if (
         lastSubmittedWordRef.current &&
-        lastSubmittedWordRef.current.word !== cleanedWord
+        lastSubmittedWordRef.current.word !== baseWord
       ) {
         commitGrade();
       }
 
-      // Step 2: Handle the Implied Grades for the words between interactions.
-      const startIndex = lastInteractionIndexRef.current;
-      const wordsToGrade: string[] = [];
-      // Use a functional update to get the latest state for checking.
-      setWordStates((currentStates) => {
-        for (let i = startIndex; i < clickedIndex; i++) {
-          const segment = storySegments[i];
-          if (!segment) continue;
-          const impliedCleanedWord = segment.trim().toLowerCase();
-          if (
-            impliedCleanedWord.length > 0 &&
-            /^[a-zĉĝĥĵŝŭ'’]+$/.test(impliedCleanedWord)
-          ) {
-            const impliedWordState = currentStates[impliedCleanedWord];
-            if (
-              !impliedWordState ||
-              impliedWordState.grade === "default" ||
-              impliedWordState.grade === "good"
-            ) {
-              wordsToGrade.push(impliedCleanedWord);
-            }
-          }
-        }
-        return currentStates; // This updater is just for reading, not writing
-      });
+      processImpliedGoodGrades(lastInteractionIndexRef.current, clickedIndex);
 
-      if (wordsToGrade.length > 0 && settings) {
-        setWordStates((prev) => {
-          const batchUpdates = wordsToGrade.reduce((acc, word) => {
-            acc[word] = { grade: "good", due: null };
-            return acc;
-          }, {});
-          return { ...prev, ...batchUpdates };
-        });
-        gradeWordsAsGood({ wordTexts: wordsToGrade, settings });
-      }
-
-      // Step 3: Handle the word that was ACTUALLY clicked.
       setWordStates((prevWordStates) => {
-        const currentState = prevWordStates[cleanedWord];
+        const currentState = prevWordStates[baseWord];
         if (currentState && currentState.due && currentState.due > Date.now()) {
-          const translation =
-            translationCache[cleanedWord] ||
-            translationCache[cleanedWord.slice(0, -1)];
+          const translation = translationCache[baseWord];
           if (translation) {
             wordRefs.current[wordKey]?.measure(
               (fx, fy, width, height, px, py) => {
@@ -227,12 +235,10 @@ export default function ReadingScreen() {
         const currentGrade = currentState?.grade || "default";
         const nextGrade = GRADING_CYCLE_MAP[currentGrade];
 
-        lastSubmittedWordRef.current = { word: cleanedWord, rating: nextGrade };
+        lastSubmittedWordRef.current = { word: baseWord, rating: nextGrade };
         lastInteractionIndexRef.current = clickedIndex + 1;
 
-        const translation =
-          translationCache[cleanedWord] ||
-          translationCache[cleanedWord.slice(0, -1)];
+        const translation = translationCache[baseWord];
         if (translation) {
           wordRefs.current[wordKey]?.measure(
             (fx, fy, width, height, px, py) => {
@@ -248,11 +254,11 @@ export default function ReadingScreen() {
 
         return {
           ...prevWordStates,
-          [cleanedWord]: { ...currentState, grade: nextGrade },
+          [baseWord]: { ...currentState, grade: nextGrade },
         };
       });
     },
-    [translationCache, commitGrade, storySegments, settings, gradeWordsAsGood]
+    [translationCache, commitGrade, processImpliedGoodGrades]
   );
 
   const handlePressOutside = useCallback(() => {
@@ -287,11 +293,13 @@ export default function ReadingScreen() {
           {storySegments.map((segment, index) => {
             const segmentKey = `seg-${index}`;
             const cleanedWord = segment.trim().toLowerCase();
+            const baseWord = getBaseWord(cleanedWord);
+
             if (
               cleanedWord.length > 0 &&
               /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)
             ) {
-              const grade = wordStates[cleanedWord]?.grade || "default";
+              const grade = wordStates[baseWord]?.grade || "default";
               return (
                 <GradedWord
                   key={segmentKey}
@@ -406,4 +414,4 @@ const getStyles = (
     },
     zoomButtonText: { fontSize: 18, fontWeight: "bold", color: textColor },
   });
-};  
+};
