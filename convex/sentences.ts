@@ -54,7 +54,6 @@ function mapRating(rating: string): Rating {
   }
 }
 
-// --- NEWLY ADDED HELPER FUNCTION ---
 function formatDueDate(date: Date): string {
   const now = new Date();
   const diffMs = date.getTime() - now.getTime();
@@ -67,73 +66,83 @@ function formatDueDate(date: Date): string {
 }
 
 // --- Queries and Mutations ---
-
-export const getSentenceFlashcard = query({
-  handler: async (ctx) => {
+export const getSentenceFlashcardQueue = query({
+  args: { limit: v.number() },
+  handler: async (ctx, { limit }) => {
     const user = await getUser(ctx);
     const settings = user?.settings;
-    if (!user || !settings) return null;
+    if (!user || !settings) return [];
 
+    const f = getFsrsInstance(settings);
+    const now = new Date();
+    const queue: any[] = [];
+
+    // 1. Find all due review sentences
     const userSents = await ctx.db
       .query("userSents")
       .withIndex("by_user_sent", (q) => q.eq("userId", user._id))
       .filter((q) => q.eq(q.field("mode"), "flashcard"))
       .collect();
 
-    let nextUserSent = userSents
-      .sort((a, b) => a.due! - b.due!)
-      .find((s) => s.due! <= Date.now());
+    const dueSents = userSents
+      .filter((s) => s.due! <= now.getTime())
+      .sort((a, b) => a.due! - b.due!);
 
-    let card: Card;
-    const now = new Date();
-    const f = getFsrsInstance(settings);
+    for (const userSent of dueSents) {
+      const sentenceDoc = await ctx.db.get(userSent.sentenceId);
+      if (sentenceDoc) {
+        const card: Card = { ...createEmptyCard(), ...userSent, due: new Date(userSent.due!), last_review: userSent.last_review ? new Date(userSent.last_review) : undefined };
+        const intervals = f.repeat(card, now);
+        queue.push({
+          _id: sentenceDoc._id,
+          front: sentenceDoc.sentence,
+          back: sentenceDoc.englishTranslation,
+          intervals: {
+            again: formatDueDate(intervals[Rating.Again].card.due),
+            hard: formatDueDate(intervals[Rating.Hard].card.due),
+            good: formatDueDate(intervals[Rating.Good].card.due),
+            easy: formatDueDate(intervals[Rating.Easy].card.due),
+          },
+        });
+      }
+    }
+    
+    // 2. If queue is not full, add new sentences
+    if (queue.length < limit) {
+        const sentencesLearnedIds = new Set(userSents.map(us => us.sentenceId));
+        const maxRangeIndex = user.maxSentRangeIndex ?? 0;
 
-    if (nextUserSent) {
-      card = {
-        ...createEmptyCard(),
-        ...nextUserSent,
-        due: new Date(nextUserSent.due!),
-        last_review: nextUserSent.last_review
-          ? new Date(nextUserSent.last_review)
-          : undefined,
-      };
-    } else {
-      const maxRangeIndex = user.maxSentRangeIndex ?? 0;
-      const nextSentenceDoc = await ctx.db
-        .query("sentences")
-        .withIndex("by_rangeIndex")
-        .filter((q) => q.gt(q.field("rangeIndex"), maxRangeIndex))
-        .order("asc")
-        .first();
+        const potentialNewSentences = await ctx.db.query("sentences")
+            .withIndex("by_rangeIndex")
+            .filter(q => q.gt(q.field("rangeIndex"), maxRangeIndex))
+            .order("asc")
+            .collect();
+        
+        for (const newSentence of potentialNewSentences) {
+            if (queue.length >= limit) break;
+            if (sentencesLearnedIds.has(newSentence._id)) continue;
 
-      if (!nextSentenceDoc) return null;
-
-      card = createEmptyCard(now);
-      (card as any).sentenceId = nextSentenceDoc._id;
+            const card = createEmptyCard(now);
+            const intervals = f.repeat(card, now);
+            queue.push({
+                _id: newSentence._id,
+                front: newSentence.sentence,
+                back: newSentence.englishTranslation,
+                intervals: {
+                    again: formatDueDate(intervals[Rating.Again].card.due),
+                    hard: formatDueDate(intervals[Rating.Hard].card.due),
+                    good: formatDueDate(intervals[Rating.Good].card.due),
+                    easy: formatDueDate(intervals[Rating.Easy].card.due),
+                },
+            });
+        }
     }
 
-    const intervals = f.repeat(card, now);
-    const sentenceId = nextUserSent
-      ? nextUserSent.sentenceId
-      : (card as any).sentenceId;
-    const sentenceDoc = await ctx.db.get(sentenceId);
-    if (!sentenceDoc) return null;
-
-    return {
-      _id: sentenceId,
-      front: sentenceDoc.sentence,
-      back: sentenceDoc.englishTranslation,
-      intervals: {  
-        again: formatDueDate(intervals[Rating.Again].card.due),
-        hard: formatDueDate(intervals[Rating.Hard].card.due),
-        good: formatDueDate(intervals[Rating.Good].card.due),
-        easy: formatDueDate(intervals[Rating.Easy].card.due),
-      },
-    };
+    return queue.slice(0, limit);
   },
 });
 
-// --- MODIFIED: gradeSentence mutation ---
+
 export const gradeSentence = mutation({
   args: { sentenceId: v.id("sentences"), rating: v.string() },
   handler: async (ctx, { sentenceId, rating }) => {

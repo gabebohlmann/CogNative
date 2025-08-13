@@ -1,4 +1,3 @@
-// components/SentencesScreen.tsx
 import React, {
   useState,
   useMemo,
@@ -25,6 +24,112 @@ interface SentenceState {
   grades: { [cleanedWord: string]: GradeKey };
 }
 
+// --- Sub-component for the Reading Mode View ---
+const SentenceReadingView = ({
+  sentence,
+  sentenceState,
+  onWordClick,
+  onMarkAllGood,
+  onSubmit,
+  wordRefs,
+}) => {
+  const styles = getStyles(useColorScheme());
+  const wordsInSentence = useMemo(
+    () => sentence?.sentence.split(/(\s+|[.,!?;"'’“”])/) || [],
+    [sentence]
+  );
+
+  if (!sentence) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.emptyText}>
+          🎉 No more sentences to review in this mode. Well done!
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.sentenceContainer}>
+        {wordsInSentence.map((word, index) => {
+          const cleanedWord = word.trim().toLowerCase();
+          const wordKey = `${sentence._id}-${index}`;
+          if (cleanedWord.length > 0 && /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)) {
+            const grade = sentenceState.grades[cleanedWord] || "default";
+            return (
+              <GradedWord
+                key={wordKey}
+                ref={(el) => (wordRefs.current[wordKey] = el as Pressable)}
+                word={word}
+                onPress={() => onWordClick(cleanedWord, wordKey)}
+                grade={grade}
+                fontSize={20}
+              />
+            );
+          }
+          return (
+            <Text key={wordKey} style={styles.sentenceText}>
+              {word}
+            </Text>
+          );
+        })}
+      </View>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.actionButton} onPress={onMarkAllGood}>
+          <Text style={styles.buttonText}>Mark All Good</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.submitButton]}
+          onPress={onSubmit}
+        >
+          <Text style={styles.buttonText}>Submit & Next</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// --- Sub-component for the Flashcard View ---
+const SentenceFlashcard = ({ onGrade }) => {
+  const [sentenceQueue, setSentenceQueue] = useState<any[] | null>(null);
+  // This query fetches the smart queue of cards to review
+  const sentenceCardData = useQuery(api.sentences.getSentenceFlashcardQueue, {
+    limit: 15,
+  });
+
+  useEffect(() => {
+    // Load the fetched queue into local state once.
+    if (sentenceCardData) {
+      setSentenceQueue(sentenceCardData);
+    }
+  }, [sentenceCardData]);
+
+  const handleGrade = (rating: string) => {
+    if (!sentenceQueue || sentenceQueue.length === 0) return;
+    const currentCard = sentenceQueue[0];
+
+    // Optimistic update: remove card from local queue instantly for a fast UI
+    setSentenceQueue((q) => (q ? q.slice(1) : []));
+
+    // Call the parent's grade function for the backend update
+    onGrade(currentCard._id, rating);
+  };
+
+  const isLoading = sentenceQueue === null;
+  const isDone = !isLoading && sentenceQueue.length === 0;
+  const currentCard = !isLoading && !isDone ? sentenceQueue[0] : null;
+
+  return (
+    <FlashcardPlayer
+      isLoading={isLoading}
+      isDone={isDone}
+      card={currentCard}
+      onGrade={handleGrade}
+    />
+  );
+};
+
 export default function SentencesScreen() {
   const [mode, setMode] = useState("reading");
   const [seenSentenceIds, setSeenSentenceIds] = useState<Id<"sentences">[]>([]);
@@ -36,14 +141,9 @@ export default function SentencesScreen() {
     [key: string]: string;
   }>({});
 
-  // Conditional queries based on the selected mode
   const readingSentence = useQuery(
     api.sentences.getSentenceForReview,
     mode === "reading" ? { seenSentenceIds } : "skip"
-  );
-  const flashcardSentence = useQuery(
-    api.sentences.getSentenceFlashcard,
-    mode === "flashcard" ? {} : "skip"
   );
 
   const settings = useQuery(api.users.getSettings);
@@ -54,12 +154,8 @@ export default function SentencesScreen() {
 
   const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
   const styles = getStyles(colorScheme);
-  const currentSentence =
-    mode === "reading" ? readingSentence : flashcardSentence;
-  const wordsInCurrentSentence = useMemo(
-    () => currentSentence?.sentence?.split(/(\s+|[.,!?;"'’“”])/) || [],
-    [currentSentence]
-  );
+
+  const currentSentence = readingSentence; // Only for reading mode context
 
   useEffect(() => {
     if (currentSentence && currentSentence.sentence) {
@@ -90,8 +186,7 @@ export default function SentencesScreen() {
   }, [currentSentence, convex]);
 
   const handleWordClickReading = useCallback(
-    (cleanedWord: string, index: number) => {
-      const wordKey = `${currentSentence?._id}-${index}`;
+    (cleanedWord: string, wordKey: string) => {
       const translation =
         translationCache[cleanedWord] ||
         translationCache[cleanedWord.slice(0, -1)];
@@ -105,6 +200,7 @@ export default function SentencesScreen() {
           });
         });
       }
+
       const currentGrade = sentenceState.grades[cleanedWord] || "default";
       const nextGrade =
         currentGrade === "default"
@@ -121,7 +217,7 @@ export default function SentencesScreen() {
         grades: { ...prev.grades, [cleanedWord]: nextGrade },
       }));
     },
-    [sentenceState, translationCache, currentSentence]
+    [sentenceState, translationCache]
   );
 
   const handleMarkAllGood = useCallback(() => {
@@ -143,11 +239,12 @@ export default function SentencesScreen() {
   }, [readingSentence, sentenceState, settings, markSentenceAsSeen]);
 
   const handleGradeFlashcard = useCallback(
-    (rating: string) => {
-      if (!flashcardSentence) return;
-      gradeSentence({ sentenceId: flashcardSentence._id, rating });
+    (sentenceId: Id<"sentences">, rating: string) => {
+      gradeSentence({ sentenceId, rating }).catch((err) => {
+        console.error("Failed to save sentence grade:", err);
+      });
     },
-    [flashcardSentence, gradeSentence]
+    [gradeSentence]
   );
 
   const handlePressOutside = useCallback(() => {
@@ -157,72 +254,21 @@ export default function SentencesScreen() {
   }, [popup.visible]);
 
   const renderContent = () => {
-    if (
-      (mode === "reading" && readingSentence === undefined) ||
-      (mode === "flashcard" && flashcardSentence === undefined)
-    ) {
-      return <ActivityIndicator style={styles.content} size="large" />;
-    }
-    if (mode === "reading") {
-      if (!readingSentence)
-        return (
-          <View style={styles.card}>
-            <Text style={styles.emptyText}>🎉 No more sentences for now!</Text>
-          </View>
-        );
-      return (
-        <View style={styles.card}>
-          <View style={styles.sentenceContainer}>
-            {wordsInCurrentSentence.map((word, index) => {
-              const cleanedWord = word.trim().toLowerCase();
-              const wordKey = `${readingSentence._id}-${index}`;
-              if (
-                cleanedWord.length > 0 &&
-                /^[a-zĉĝĥĵŝŭ'’]+$/.test(cleanedWord)
-              ) {
-                const grade = sentenceState.grades[cleanedWord] || "default";
-                return (
-                  <GradedWord
-                    key={wordKey}
-                    ref={(el) => (wordRefs.current[wordKey] = el as Pressable)}
-                    word={word}
-                    onPress={() => handleWordClickReading(cleanedWord, index)}
-                    grade={grade}
-                    fontSize={20}
-                  />
-                );
-              }
-              return (
-                <Text key={wordKey} style={styles.sentenceText}>
-                  {word}
-                </Text>
-              );
-            })}
-          </View>
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleMarkAllGood}
-            >
-              <Text style={styles.buttonText}>Mark All Good</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.submitButton]}
-              onPress={handleSubmitReading}
-            >
-              <Text style={styles.buttonText}>Submit & Next</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      );
+    if (mode === "reading" && readingSentence === undefined) {
+      return <ActivityIndicator style={{ flex: 1 }} size="large" />;
     }
     if (mode === "flashcard") {
+      return <SentenceFlashcard onGrade={handleGradeFlashcard} />;
+    }
+    if (mode === "reading") {
       return (
-        <FlashcardPlayer
-          card={flashcardSentence}
-          onGrade={handleGradeFlashcard}
-          isLoading={flashcardSentence === undefined}
-          isDone={flashcardSentence === null}
+        <SentenceReadingView
+          sentence={readingSentence}
+          sentenceState={sentenceState}
+          onWordClick={handleWordClickReading}
+          onMarkAllGood={handleMarkAllGood}
+          onSubmit={handleSubmitReading}
+          wordRefs={wordRefs}
         />
       );
     }
