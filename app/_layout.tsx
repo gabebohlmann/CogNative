@@ -12,6 +12,7 @@ import * as SecureStore from 'expo-secure-store'
 // Import the necessary Convex components
 import { ConvexReactClient } from 'convex/react';
 import { ConvexProviderWithClerk } from "convex/react-clerk";
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Create a Convex client
 const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
@@ -72,13 +73,15 @@ export default function RootLayout() {
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <ClerkLoaded>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-              <Stack.Screen name="+not-found" />
-            </Stack>
-          </ThemeProvider>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                <Stack.Screen name="+not-found" />
+              </Stack>
+            </ThemeProvider>
+          </GestureHandlerRootView> 
         </ClerkLoaded>
       </ConvexProviderWithClerk>
     </ClerkProvider>

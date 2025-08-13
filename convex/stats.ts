@@ -25,17 +25,19 @@ export const getStats = query({
   handler: async (ctx) => {
     const user = await getUser(ctx);
     if (!user) {
-      // Return a default state for logged-out users
       return {
         newToday: 0,
         learning: 0,
         learned: 0,
         dueToday: 0,
         totalKnown: 0,
-        sentencesLearned: 0,
+        sentencesLearnedRank: 0,
+        sentencesLearnedFlashcard: 0,
+        totalSentencesSeen: 0,
       };
     }
 
+    // --- Word Stats Calculation ---
     const allUserWords = await ctx.db
       .query("userWords")
       .withIndex("by_user_word", (q) => q.eq("userId", user._id))
@@ -50,21 +52,28 @@ export const getStats = query({
     let dueTodayCount = 0;
 
     for (const word of allUserWords) {
-      // "Learning" includes cards in both the initial learning and relearning steps.
       if (word.state === State.Learning || word.state === State.Relearning) {
         learningCount++;
       }
-
-      // "Learned" are cards in the long-term review state.
       if (word.state === State.Review) {
         learnedCount++;
       }
-
-      // Count any card scheduled for review from now until the end of the day.
       if (word.due <= endOfToday.getTime()) {
         dueTodayCount++;
       }
     }
+
+    // --- MODIFICATION: Sentence Stats Calculation ---
+    // Fetch all sentence records for the user in one go.
+    const allUserSents = await ctx.db
+      .query("userSents")
+      .withIndex("by_user_sent", (q) => q.eq("userId", user._id))
+      .collect();
+
+    // Calculate the flashcard-specific count from the list.
+    const sentencesLearnedFlashcard = allUserSents.filter(
+      (s) => s.mode === "flashcard"
+    ).length;
 
     return {
       newToday: user.newCardsSeenToday ?? 0,
@@ -72,7 +81,9 @@ export const getStats = query({
       learned: learnedCount,
       dueToday: dueTodayCount,
       totalKnown: allUserWords.length,
-      sentencesLearned: user.maxSentRangeIndex ?? 0,
+      sentencesLearnedRank: user.maxSentRangeIndex ?? 0,
+      sentencesLearnedFlashcard: sentencesLearnedFlashcard, // The count from flashcard mode
+      totalSentencesSeen: allUserSents.length, // The total count from all modes
     };
   },
 });

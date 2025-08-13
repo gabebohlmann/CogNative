@@ -1,3 +1,4 @@
+// convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -44,8 +45,7 @@ export default defineSchema({
     lastSession: v.optional(v.number()),
     newCardsSeenToday: v.optional(v.number()),
     lastResetDate: v.optional(v.string()),
-    // --- ADDED FIELD ---
-    maxSentRangeIndex: v.optional(v.number()), // Tracks sentence flashcard progress
+    maxSentRangeIndex: v.optional(v.number()), //
     settings: v.optional(
       v.object({
         request_retention: v.float64(),
@@ -66,6 +66,7 @@ export default defineSchema({
 
   sentences: defineTable({
     sentence: v.string(),
+    englishTranslation: v.string(),
     range: v.optional(v.float64()),
     rangeIndex: v.optional(v.float64()),
     freq: v.optional(v.float64()),

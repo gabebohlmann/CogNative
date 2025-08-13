@@ -1,3 +1,4 @@
+// convex/sentences.ts
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
@@ -11,6 +12,7 @@ import {
   Rating,
   createEmptyCard,
 } from "ts-fsrs";
+import { gradeWordLogic } from "./userWords"; 
 
 // --- Helper Functions ---
 
@@ -52,12 +54,25 @@ function mapRating(rating: string): Rating {
   }
 }
 
+// --- NEWLY ADDED HELPER FUNCTION ---
+function formatDueDate(date: Date): string {
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  if (diffMs < 0) return "<1m";
+  const diffMins = Math.round(diffMs / (1000 * 60));
+  if (diffMins < 60) return `${diffMins}m`;
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+  if (diffHours < 24) return `${diffHours}h`;
+  return `${Math.round(diffMs / (1000 * 60 * 60 * 24))}d`;
+}
+
 // --- Queries and Mutations ---
 
 export const getSentenceFlashcard = query({
   handler: async (ctx) => {
     const user = await getUser(ctx);
-    if (!user) return null;
+    const settings = user?.settings;
+    if (!user || !settings) return null;
 
     const userSents = await ctx.db
       .query("userSents")
@@ -65,25 +80,60 @@ export const getSentenceFlashcard = query({
       .filter((q) => q.eq(q.field("mode"), "flashcard"))
       .collect();
 
-    const dueCard = userSents
+    let nextUserSent = userSents
       .sort((a, b) => a.due! - b.due!)
       .find((s) => s.due! <= Date.now());
-    if (dueCard) {
-      return await ctx.db.get(dueCard.sentenceId);
+
+    let card: Card;
+    const now = new Date();
+    const f = getFsrsInstance(settings);
+
+    if (nextUserSent) {
+      card = {
+        ...createEmptyCard(),
+        ...nextUserSent,
+        due: new Date(nextUserSent.due!),
+        last_review: nextUserSent.last_review
+          ? new Date(nextUserSent.last_review)
+          : undefined,
+      };
+    } else {
+      const maxRangeIndex = user.maxSentRangeIndex ?? 0;
+      const nextSentenceDoc = await ctx.db
+        .query("sentences")
+        .withIndex("by_rangeIndex")
+        .filter((q) => q.gt(q.field("rangeIndex"), maxRangeIndex))
+        .order("asc")
+        .first();
+
+      if (!nextSentenceDoc) return null;
+
+      card = createEmptyCard(now);
+      (card as any).sentenceId = nextSentenceDoc._id;
     }
 
-    const maxRangeIndex = user.maxSentRangeIndex ?? 0;
-    const nextSentence = await ctx.db
-      .query("sentences")
-      .withIndex("by_rangeIndex")
-      .filter((q) => q.gt(q.field("rangeIndex"), maxRangeIndex))
-      .order("asc")
-      .first();
+    const intervals = f.repeat(card, now);
+    const sentenceId = nextUserSent
+      ? nextUserSent.sentenceId
+      : (card as any).sentenceId;
+    const sentenceDoc = await ctx.db.get(sentenceId);
+    if (!sentenceDoc) return null;
 
-    return nextSentence;
+    return {
+      _id: sentenceId,
+      front: sentenceDoc.sentence,
+      back: sentenceDoc.englishTranslation,
+      intervals: {  
+        again: formatDueDate(intervals[Rating.Again].card.due),
+        hard: formatDueDate(intervals[Rating.Hard].card.due),
+        good: formatDueDate(intervals[Rating.Good].card.due),
+        easy: formatDueDate(intervals[Rating.Easy].card.due),
+      },
+    };
   },
 });
 
+// --- MODIFIED: gradeSentence mutation ---
 export const gradeSentence = mutation({
   args: { sentenceId: v.id("sentences"), rating: v.string() },
   handler: async (ctx, { sentenceId, rating }) => {
@@ -94,34 +144,19 @@ export const gradeSentence = mutation({
     const sentence = await ctx.db.get(sentenceId);
     if (!sentence) return;
 
+    // ... (logic to grade the sentence itself remains the same)
     const f = getFsrsInstance(settings);
     const fsrsRating = mapRating(rating);
     const now = new Date();
-
-    let userSent = await ctx.db
-      .query("userSents")
-      .withIndex("by_user_sent", (q) =>
-        q.eq("userId", user._id).eq("sentenceId", sentenceId)
-      )
-      .first();
-
+    let userSent = await ctx.db.query("userSents").withIndex("by_user_sent", (q) => q.eq("userId", user._id).eq("sentenceId", sentenceId)).first();
     let card: Card;
     if (userSent && userSent.mode === "flashcard") {
-      card = {
-        ...createEmptyCard(),
-        ...userSent,
-        due: new Date(userSent.due!),
-        last_review: userSent.last_review
-          ? new Date(userSent.last_review)
-          : undefined,
-      };
+      card = { ...createEmptyCard(), ...userSent, due: new Date(userSent.due!), last_review: userSent.last_review ? new Date(userSent.last_review) : undefined, };
     } else {
       card = createEmptyCard(now);
     }
-
     const scheduled = f.repeat(card, now)[fsrsRating];
     const newCard = scheduled.card;
-
     const dataToStore = {
       userId: user._id,
       sentenceId: sentenceId,
@@ -136,26 +171,21 @@ export const gradeSentence = mutation({
       state: newCard.state,
       last_review: newCard.last_review!.getTime(),
     };
-
     if (userSent) {
       await ctx.db.patch(userSent._id, dataToStore);
     } else {
       await ctx.db.insert("userSents", dataToStore);
     }
-
     if ((sentence.rangeIndex ?? 0) > (user.maxSentRangeIndex ?? 0)) {
       await ctx.db.patch(user._id, { maxSentRangeIndex: sentence.rangeIndex });
     }
+    // --- End of sentence grading logic ---
 
-    const wordsInSentence = new Set(
-      sentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []
-    );
+    // MODIFICATION: Call the helper function directly instead of using the scheduler.
+    const wordsInSentence = new Set(sentence.sentence.toLowerCase().match(/[a-zĉĝĥĵŝŭ'’]+/g) || []);
     for (const word of wordsInSentence) {
-      await ctx.scheduler.runAfter(0, internal.userWords.gradeWord, {
-        wordText: word,
-        rating,
-        settings,
-      });
+      // This direct call preserves the user's identity.
+      await gradeWordLogic(ctx, { userId: user._id, user, wordText: word, rating, settings });
     }
   },
 });

@@ -1,4 +1,3 @@
-// components/StatsScreen.tsx
 import React from "react";
 import {
   View,
@@ -17,7 +16,7 @@ const StatRow = ({
   color,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   description?: string;
   color?: string;
 }) => {
@@ -48,6 +47,15 @@ export default function StatsScreen() {
     return <ActivityIndicator style={styles.container} size="large" />;
   }
 
+  if (stats === null) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Stats</Text>
+        <Text style={styles.statLabel}>Log in to see your stats.</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Your Progress 📊</Text>
@@ -67,17 +75,29 @@ export default function StatsScreen() {
       <Text style={styles.subtitle}>Vocabulary Breakdown</Text>
       <View style={styles.card}>
         <StatRow
-          label="Learning"
+          label="Words: Learning"
           value={stats.learning}
           description="Words in short-term steps."
         />
         <StatRow
-          label="Learned"
+          label="Words: Learned"
           value={stats.learned}
           description="Words in long-term review."
         />
         <View style={styles.divider} />
         <StatRow label="Total Known Words" value={stats.totalKnown} />
+
+        {/* --- MODIFICATION: Updated Sentence Stats --- */}
+        <StatRow
+          label="# of most common phrases learned"
+          value={stats.sentencesLearnedFlashcard}
+          description={`(Highest rank: ${stats.sentencesLearnedRank})`}
+        />
+        <StatRow
+          label="Total Sentences Seen"
+          value={stats.totalSentencesSeen}
+          description="(Reading & Flashcard modes)"
+        />
       </View>
     </View>
   );
@@ -112,7 +132,8 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     card: {
       backgroundColor: cardBackgroundColor,
       borderRadius: 12,
-      padding: 20,
+      paddingHorizontal: 20,
+      paddingVertical: 5,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.1,
@@ -127,6 +148,7 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     },
     statLabelContainer: {
       flex: 1,
+      paddingRight: 10,
     },
     statLabel: {
       fontSize: 18,
@@ -147,7 +169,8 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     divider: {
       height: 1,
       backgroundColor: dividerColor,
-      marginVertical: 10,
+      marginHorizontal: -20,
+      marginVertical: 5,
     },
   });
 };

@@ -8,23 +8,15 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Button from "@/components/Button";
 import { router } from 'expo-router';
 import Flashcard from "@/components/Flashcard";
+import WordsScreen from '@/components/WordsScreen';
+import { ScrollView } from 'react-native-gesture-handler';
 
 export default function HomeScreen() {
   return (
-    // <ParallaxScrollView
-    //   headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-    //   headerImage={
-    //     <Image
-    //       source={require('@/assets/images/partial-react-logo.png')}
-    //       style={styles.reactLogo}
-    //     />
-    //   }>
+    <ScrollView>
+      <WordsScreen />
+    </ScrollView>
 
-      <ThemedView style={styles.stepContainer}>
-        <Flashcard />
-      </ThemedView>
-
-    // </ParallaxScrollView>  
   );
 }
 
