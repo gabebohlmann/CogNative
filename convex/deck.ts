@@ -1,13 +1,7 @@
-// convex/deck.ts
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 
-const State = {
-  New: 0,
-  Learning: 1,
-  Review: 2,
-  Relearning: 3,
-};
+const State = { New: 0, Learning: 1, Review: 2, Relearning: 3 };
 
 async function getUser(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -46,50 +40,67 @@ function mapStateToString(state: number): string {
 }
 
 export const getSeenSentences = query({
-  handler: async (ctx) => {
+  args: { filter: v.optional(v.string()) },
+  handler: async (ctx, { filter }) => {
     const user = await getUser(ctx);
     if (!user) return [];
-
     const userSents = await ctx.db
       .query("userSents")
       .withIndex("by_user_sent", (q) => q.eq("userId", user._id))
       .collect();
-
-    const sentences = await Promise.all(
+    let sentencesData = await Promise.all(
       userSents.map(async (us) => {
         const sentenceDoc = await ctx.db.get(us.sentenceId);
         if (!sentenceDoc) return null;
-        // Include the sentence data AND the reps count
-        return {
-          ...sentenceDoc,
-          reps: us.reps,
-        };
+        if (us.mode === "flashcard" && us.due && us.state !== undefined) {
+          return {
+            _id: us._id.toString(),
+            text: sentenceDoc.sentence,
+            due: formatDueDate(us.due),
+            state: mapStateToString(us.state),
+            reps: us.reps,
+            rangeIndex: sentenceDoc.rangeIndex ?? "N/A",
+            freqIndex: sentenceDoc.freqIndex ?? "N/A",
+            avg_rank: sentenceDoc.avg_rank?.toFixed(1) ?? "N/A",
+          };
+        } else {
+          return {
+            _id: us._id.toString(),
+            text: sentenceDoc.sentence,
+            due: "N/A",
+            state: "Read",
+            reps: us.reps,
+            rangeIndex: sentenceDoc.rangeIndex ?? "N/A",
+            freqIndex: sentenceDoc.freqIndex ?? "N/A",
+            avg_rank: sentenceDoc.avg_rank?.toFixed(1) ?? "N/A",
+          };
+        }
       })
     );
-
-    return sentences
-      .filter(Boolean)
-      .sort((a, b) => (b.reps || 0) - (a.reps || 0)); // Sort by reps descending
+    let finalData = sentencesData.filter(Boolean);
+    if (filter) {
+      finalData = finalData.filter((item) =>
+        item.text.toLowerCase().includes(filter.toLowerCase())
+      );
+    }
+    return finalData.sort((a, b) => (b.reps || 0) - (a.reps || 0));
   },
 });
 
 export const getDeckWords = query({
-  // --- MODIFICATION: Add args for sorting ---
   args: {
     sortBy: v.string(),
     sortDirection: v.string(),
+    filter: v.optional(v.string()),
   },
-  handler: async (ctx, { sortBy, sortDirection }) => {
+  handler: async (ctx, { sortBy, sortDirection, filter }) => {
     const user = await getUser(ctx);
     if (!user) return [];
-
     const allUserWords = await ctx.db
       .query("userWords")
       .withIndex("by_user_word", (q) => q.eq("userId", user._id))
       .collect();
-
-    // --- MODIFICATION: Combine data BEFORE sorting ---
-    const combinedData = (
+    let combinedData = (
       await Promise.all(
         allUserWords.map(async (userWord) => {
           const word = await ctx.db.get(userWord.wordId);
@@ -97,21 +108,20 @@ export const getDeckWords = query({
         })
       )
     ).filter(Boolean);
-
-    // --- MODIFICATION: Dynamic sorting logic ---
+    if (filter) {
+      combinedData = combinedData.filter((item) =>
+        item.word.esperanto.toLowerCase().startsWith(filter.toLowerCase())
+      );
+    }
     combinedData.sort((a, b) => {
       let valA, valB;
-
-      // Handle the default two-level sort
       if (sortBy === "default") {
         const dueDiff = a.userWord.due - b.userWord.due;
         if (dueDiff !== 0) return dueDiff;
-        // Secondary sort by rangeIndex if due dates are the same
         return (
           (a.word.rangeIndex ?? Infinity) - (b.word.rangeIndex ?? Infinity)
         );
       }
-
       switch (sortBy) {
         case "due":
           valA = a.userWord.due;
@@ -129,13 +139,10 @@ export const getDeckWords = query({
           valA = a.word.esperanto;
           valB = b.word.esperanto;
       }
-
       if (valA < valB) return sortDirection === "ascending" ? -1 : 1;
       if (valA > valB) return sortDirection === "ascending" ? 1 : -1;
       return 0;
     });
-
-    // Map to final format after sorting
     return combinedData.map(({ userWord, word }) => ({
       _id: userWord._id.toString(),
       esperanto: word.esperanto,

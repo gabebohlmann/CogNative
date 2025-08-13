@@ -1,5 +1,4 @@
-// components/DeckBrowserScreen.tsx
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,130 +7,123 @@ import {
   useColorScheme,
   TouchableOpacity,
   ScrollView,
+  TextInput,
 } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { FlashList } from "@shopify/flash-list";
 
-const WordHeader = ({
+// --- Custom hook to debounce user input for performance ---
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+// --- COLUMN CONFIGURATIONS ---
+const wordColumns = [
+  {
+    key: "word",
+    title: "Word",
+    flex: 2.5,
+    isSortable: false,
+    render: WordCell,
+  },
+  { key: "due", title: "Due", flex: 1, isSortable: true },
+  { key: "state", title: "State", flex: 1.2, isSortable: false },
+  { key: "reps", title: "Reps", flex: 0.8, isSortable: false },
+  { key: "rangeIndex", title: "Range", flex: 1, isSortable: true },
+  { key: "freqIndex", title: "Freq", flex: 1, isSortable: true },
+];
+
+const sentenceColumns = [
+  { key: "text", title: "Sentence", flex: 3, isSortable: false },
+  { key: "due", title: "Due", flex: 1, isSortable: false },
+  { key: "state", title: "State", flex: 1.2, isSortable: false },
+  { key: "reps", title: "Reps", flex: 0.8, isSortable: false },
+  { key: "avg_rank", title: "Avg Rank", flex: 1.2, isSortable: false },
+];
+
+function WordCell({ item }) {
+  const styles = getStyles(useColorScheme());
+  return (
+    <View>
+      <Text style={styles.wordText}>{item.esperanto}</Text>
+      <Text style={styles.wordTranslation}>{item.english}</Text>
+    </View>
+  );
+}
+
+// --- REUSABLE TABLE COMPONENT ---
+const TableView = ({
+  columns,
+  data,
   sortConfig,
   requestSort,
-}: {
-  sortConfig: any;
-  requestSort: (key: string) => void;
+  estimatedItemSize = 60,
 }) => {
   const styles = getStyles(useColorScheme());
-
-  const getDirectionIndicator = (key: string) => {
-    if (sortConfig.key !== key) return null;
+  const getDirectionIndicator = (key) => {
+    if (!sortConfig || sortConfig.key !== key) return null;
     return sortConfig.direction === "ascending" ? " ▲" : " ▼";
   };
-
-  return (
-    <View style={[styles.tableRow, styles.tableHeader]}>
-      <Text style={[styles.headerText, { flex: 3 }]}>Word</Text>
-      <TouchableOpacity style={{ flex: 1 }} onPress={() => requestSort("due")}>
-        <Text style={styles.headerTextClickable}>
-          Due{getDirectionIndicator("due")}
-        </Text>
-      </TouchableOpacity>
-      <Text style={[styles.headerText, { flex: 1, textAlign: "center" }]}>
-        State
-      </Text>
-      <Text style={[styles.headerText, { flex: 1, textAlign: "center" }]}>
-        Reps
-      </Text>
-      <TouchableOpacity
-        style={{ flex: 1 }}
-        onPress={() => requestSort("rangeIndex")}
-      >
-        <Text style={styles.headerTextClickable}>
-          Range{getDirectionIndicator("rangeIndex")}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={{ flex: 1 }}
-        onPress={() => requestSort("freqIndex")}
-      >
-        <Text style={styles.headerTextClickable}>
-          Freq{getDirectionIndicator("freqIndex")}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
-
-const WordRow = React.memo(({ item, index }: { item: any; index: number }) => {
-  const styles = getStyles(useColorScheme());
-  const isEvenRow = index % 2 === 0;
-
-  const stateColor =
-    item.state === "Learning"
-      ? "#17a2b8"
-      : item.state === "Relearning"
-        ? "#ffc107"
-        : item.due === "Due"
-          ? "#dc3545"
-          : "#28a745";
-
-  return (
-    <View style={[styles.tableRow, isEvenRow ? styles.evenRow : {}]}>
-      <View style={[styles.tableCell, { flex: 3, alignItems: "flex-start" }]}>
-        <Text style={styles.wordText}>{item.esperanto}</Text>
-        <Text style={styles.wordTranslation}>{item.english}</Text>
-      </View>
-      <Text
-        style={[
-          styles.tableCell,
-          styles.cellText,
-          { flex: 1, color: stateColor },
-        ]}
-      >
-        {item.due}
-      </Text>
-      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
-        {item.state}
-      </Text>
-      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
-        {item.reps}
-      </Text>
-      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
-        {item.rangeIndex}
-      </Text>
-      <Text style={[styles.tableCell, styles.cellText, { flex: 1 }]}>
-        {item.freqIndex}
-      </Text>
-    </View>
-  );
-});
-
-const SentencesView = () => {
-  const seenSentences = useQuery(api.deck.getSeenSentences);
-  const styles = getStyles(useColorScheme());
-
-  if (seenSentences === undefined) {
+  const TableRow = React.memo(({ item, index }) => {
+    const isEvenRow = index % 2 === 0;
     return (
-      <ActivityIndicator style={{ flex: 1, marginTop: 20 }} size="large" />
+      <View style={[styles.tableRow, isEvenRow && styles.evenRow]}>
+        {columns.map((column) => {
+          const CellRenderer = column.render;
+          const cellStyle = [styles.tableCell, { flex: column.flex }];
+          if (CellRenderer) {
+            return (
+              <View key={column.key} style={cellStyle}>
+                <CellRenderer item={item} />
+              </View>
+            );
+          }
+          return (
+            <Text key={column.key} style={cellStyle}>
+              {item[column.key]}
+            </Text>
+          );
+        })}
+      </View>
     );
-  }
-
+  });
   return (
-    <ScrollView>
-      {seenSentences.length > 0 ? (
-        seenSentences.map((sentence) => (
-          <View key={sentence._id} style={styles.sentenceCard}>
-            <Text style={styles.sentenceText}>{sentence.sentence}</Text>
-            <View style={styles.repsContainer}>
-              <Text style={styles.repsText}>Reps: {sentence.reps}</Text>
-            </View>
-          </View>
-        ))
-      ) : (
-        <Text style={styles.emptyText}>
-          You haven't reviewed any sentences yet.
-        </Text>
-      )}
-    </ScrollView>
+    <View style={{ flex: 1 }}>
+      <View style={[styles.tableRow, styles.tableHeader]}>
+        {columns.map((column) => (
+          <TouchableOpacity
+            key={column.key}
+            style={{ flex: column.flex }}
+            onPress={() => column.isSortable && requestSort(column.key)}
+            disabled={!column.isSortable}
+          >
+            <Text style={styles.headerText}>
+              {column.title}
+              {column.isSortable && getDirectionIndicator(column.key)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <FlashList
+        data={data}
+        renderItem={({ item, index }) => <TableRow item={item} index={index} />}
+        estimatedItemSize={estimatedItemSize}
+        keyExtractor={(item) => item._id}
+        ListEmptyComponent={() => (
+          <Text style={styles.emptyText}>No data available.</Text>
+        )}
+      />
+    </View>
   );
 };
 
@@ -141,60 +133,71 @@ export default function DeckBrowserScreen() {
     key: "default",
     direction: "ascending",
   });
+  const [filterText, setFilterText] = useState("");
+  const debouncedFilter = useDebounce(filterText, 300);
 
   const deckWords = useQuery(api.deck.getDeckWords, {
     sortBy: sortConfig.key,
     sortDirection: sortConfig.direction,
+    filter: debouncedFilter || undefined,
   });
-
+  const seenSentences = useQuery(api.deck.getSeenSentences, {
+    filter: debouncedFilter || undefined,
+  });
   const styles = getStyles(useColorScheme());
 
   const handleSort = useCallback((key: string) => {
-    setSortConfig((currentConfig) => {
-      const isAscending =
-        currentConfig.key === key && currentConfig.direction === "ascending";
-      return {
-        key: key,
-        direction: isAscending ? "descending" : "ascending",
-      };
-    });
+    setSortConfig((current) => ({
+      key: key,
+      direction:
+        current.key === key && current.direction === "ascending"
+          ? "descending"
+          : "ascending",
+    }));
   }, []);
 
-  const renderWordsView = () => {
-    if (deckWords === undefined) {
+  const renderContent = () => {
+    if (activeView === "words") {
+      if (deckWords === undefined)
+        return <ActivityIndicator style={{ flex: 1 }} size="large" />;
       return (
-        <ActivityIndicator style={{ flex: 1, marginTop: 20 }} size="large" />
-      );
-    }
-    return (
-      <>
-        <WordHeader sortConfig={sortConfig} requestSort={handleSort} />
-        <FlashList
+        <TableView
+          columns={wordColumns}
           data={deckWords}
-          renderItem={({ item, index }) => (
-            <WordRow item={item} index={index} />
-          )}
-          estimatedItemSize={60}
-          keyExtractor={(item) => item._id}
-          ListEmptyComponent={() => (
-            <Text style={styles.emptyText}>Your deck is empty.</Text>
-          )}
+          sortConfig={sortConfig}
+          requestSort={handleSort}
         />
-      </>
-    );
+      );
+    } else {
+      if (seenSentences === undefined)
+        return <ActivityIndicator style={{ flex: 1 }} size="large" />;
+      return <TableView columns={sentenceColumns} data={seenSentences} />;
+    }
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>📖 Deck Browser</Text>
-
+      <TextInput
+        style={styles.filterInput}
+        placeholder={
+          activeView === "words" ? "Filter words..." : "Filter sentences..."
+        }
+        placeholderTextColor={styles.secondaryText.color}
+        value={filterText}
+        onChangeText={setFilterText}
+      />
       <View style={styles.toggleContainer}>
         <TouchableOpacity
           style={[
             styles.toggleButton,
             activeView === "words" && styles.activeButton,
           ]}
-          onPress={() => setActiveView("words")}
+          // MODIFICATION: Added setFilterText('') to clear the filter on view change.
+          onPress={() => {
+            setActiveView("words");
+            setFilterText("");
+          }}
         >
           <Text
             style={[
@@ -210,7 +213,11 @@ export default function DeckBrowserScreen() {
             styles.toggleButton,
             activeView === "sentences" && styles.activeButton,
           ]}
-          onPress={() => setActiveView("sentences")}
+          // MODIFICATION: Added setFilterText('') to clear the filter on view change.
+          onPress={() => {
+            setActiveView("sentences");
+            setFilterText("");
+          }}
         >
           <Text
             style={[
@@ -222,20 +229,20 @@ export default function DeckBrowserScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-
-      {activeView === "words" ? renderWordsView() : <SentencesView />}
+      {renderContent()}
     </View>
   );
 }
 
 const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
   const isDark = colorScheme === "dark";
-  const textColor = isDark ? "#eee" : "#111";
-  const secondaryTextColor = isDark ? "#aaa" : "#666";
+  const textColor = isDark ? "#eee" : "#222";
+  const secondaryTextColor = isDark ? "#aaa" : "#555";
   const borderColor = isDark ? "#444" : "#ddd";
   const evenRowBg = isDark ? "#2a2a2a" : "#f9f9f9";
   const inactiveToggleBg = isDark ? "#2a2a2a" : "#e9ecef";
   const activeToggleBg = "#007bff";
+  const inputBg = isDark ? "#2a2a2a" : "#fff";
 
   return StyleSheet.create({
     container: {
@@ -252,7 +259,7 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     },
     toggleContainer: {
       flexDirection: "row",
-      marginBottom: 20,
+      marginBottom: 15,
       borderRadius: 8,
       overflow: "hidden",
     },
@@ -262,28 +269,15 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       alignItems: "center",
       backgroundColor: inactiveToggleBg,
     },
-    activeButton: {
-      backgroundColor: activeToggleBg,
-    },
-    toggleButtonText: {
-      fontSize: 16,
-      fontWeight: "600",
-      color: textColor,
-    },
-    activeButtonText: {
-      color: "#fff",
-    },
+    activeButton: { backgroundColor: activeToggleBg },
+    toggleButtonText: { fontSize: 16, fontWeight: "600", color: textColor },
+    activeButtonText: { color: "#fff" },
     tableHeader: {
       borderBottomWidth: 2,
-      borderColor: borderColor,
+      borderColor: isDark ? "#666" : "#bbb",
       paddingBottom: 10,
     },
     headerText: {
-      fontWeight: "bold",
-      color: textColor,
-      fontSize: 14,
-    },
-    headerTextClickable: {
       fontWeight: "bold",
       color: textColor,
       fontSize: 14,
@@ -297,52 +291,32 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       borderBottomWidth: 1,
       borderColor: borderColor,
     },
-    evenRow: {
-      backgroundColor: evenRowBg,
-    },
+    evenRow: { backgroundColor: evenRowBg },
     tableCell: {
       textAlign: "center",
       color: textColor,
-      alignItems: "center",
+      fontSize: 15,
+      alignItems: "flex-start",
     },
-    cellText: {
-      fontSize: 16,
-    },
-    wordText: {
-      fontSize: 16,
-      fontWeight: "500",
-      color: textColor,
-    },
-    wordTranslation: {
-      fontSize: 12,
-      color: secondaryTextColor,
-    },
-    sentenceCard: {
-      backgroundColor: isDark ? "#2a2a2a" : "#fff",
-      borderRadius: 8,
-      padding: 15,
-      marginBottom: 10,
-    },
-    sentenceText: {
-      fontSize: 16,
-      color: textColor,
-      lineHeight: 24,
-      paddingBottom: 10,
-    },
-    repsContainer: {
-      alignSelf: "flex-end",
-      marginTop: 5,
-    },
-    repsText: {
-      fontSize: 12,
-      fontWeight: "600",
-      color: secondaryTextColor,
-    },
+    wordText: { fontSize: 16, fontWeight: "500", color: textColor },
+    wordTranslation: { fontSize: 12, color: secondaryTextColor },
     emptyText: {
       marginTop: 50,
       textAlign: "center",
       fontSize: 16,
       color: secondaryTextColor,
+    },
+    secondaryText: { color: secondaryTextColor },
+    filterInput: {
+      backgroundColor: inputBg,
+      color: textColor,
+      paddingHorizontal: 15,
+      paddingVertical: 12,
+      borderRadius: 8,
+      fontSize: 16,
+      marginBottom: 15,
+      borderWidth: 1,
+      borderColor: borderColor,
     },
   });
 };
