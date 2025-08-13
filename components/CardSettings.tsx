@@ -1,3 +1,4 @@
+// components/CardSettings.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useQuery, useMutation } from 'convex/react';

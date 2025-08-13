@@ -1,10 +1,9 @@
 // app/(tabs)/sents.tsx
-// app/(tabs)/deckBrowser.tsx
-// app/(tabs)/index.tsx
 import { StyleSheet } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import SentencesScreen from "@/components/SentencesScreen";
-import { ScrollView } from "react-native-gesture-handler";            
+// import { ScrollView } from "react-native-gesture-handler";  
+import { ScrollView } from "react-native";            
 
 export default function SentencesTabScreen() {
   return (

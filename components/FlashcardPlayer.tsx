@@ -1,15 +1,28 @@
 // components/FlashcardPlayer.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  PanResponder,
 } from "react-native";
 
 export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
   const [isFlipped, setIsFlipped] = useState(false);
+
+  // Use refs to give the PanResponder access to the latest state and props
+  const isFlippedRef = useRef(isFlipped);
+  useEffect(() => {
+    isFlippedRef.current = isFlipped;
+  }, [isFlipped]);
+
+  // --- NEW: Create a ref to hold the latest onGrade function ---
+  const onGradeRef = useRef(onGrade);
+  useEffect(() => {
+    onGradeRef.current = onGrade;
+  }, [onGrade]);
 
   useEffect(() => {
     setIsFlipped(false);
@@ -18,6 +31,41 @@ export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
   const handleFlip = () => {
     setIsFlipped((prev) => !prev);
   };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => isFlippedRef.current,
+      onMoveShouldSetPanResponder: () => isFlippedRef.current,
+      onPanResponderRelease: (evt, gestureState) => {
+        const { dx, dy } = gestureState;
+        const swipeThreshold = 50;
+
+        // A helper to call the grade function from the ref
+        const grade = (rating) => {
+          if (onGradeRef.current) {
+            onGradeRef.current(rating);
+          }
+        };
+
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > swipeThreshold) {
+          if (dx > 0) {
+            grade("good");
+          } else {
+            grade("again");
+          }
+        } else if (
+          Math.abs(dy) > Math.abs(dx) &&
+          Math.abs(dy) > swipeThreshold
+        ) {
+          if (dy > 0) {
+            grade("hard");
+          } else {
+            grade("easy");
+          }
+        }
+      },
+    })
+  ).current;
 
   if (isLoading) {
     return <ActivityIndicator style={styles.container} size="large" />;
@@ -34,15 +82,13 @@ export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.card}>
+      <View style={styles.card} {...panResponder.panHandlers}>
         {isFlipped ? (
           <>
-            {/* MODIFICATION: Use a smaller, de-emphasized style for the front when flipped */}
             <Text style={[styles.cardText, styles.flippedFrontText]}>
               {card.front}
             </Text>
             <View style={styles.divider} />
-            {/* MODIFICATION: Use the new, bigger, bolder style for the back */}
             <Text style={[styles.cardText, styles.cardBackText]}>
               {card.back}
             </Text>
@@ -111,7 +157,7 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 10, fontSize: 18, color: "#333" },
   card: {
     width: 320,
-    minHeight: 200,
+    minHeight: 450,
     backgroundColor: "white",
     borderRadius: 16,
     justifyContent: "center",
@@ -131,13 +177,11 @@ const styles = StyleSheet.create({
   cardTextSmall: {
     fontSize: 20,
   },
-  // --- NEW: Style for the front text when card is flipped ---
   flippedFrontText: {
     fontSize: 20,
     fontWeight: "500",
     color: "#666",
   },
-  // --- MODIFIED: Style for the back text to make it bigger and bolder ---
   cardBackText: {
     fontSize: 32,
     fontWeight: "bold",
@@ -178,4 +222,3 @@ const styles = StyleSheet.create({
   goodButton: { backgroundColor: "#28a745" },
   easyButton: { backgroundColor: "#17a2b8" },
 });
-export default FlashcardPlayer;

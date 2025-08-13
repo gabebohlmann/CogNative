@@ -4,6 +4,9 @@
 2. Componentize reading mode/popup translation for sentences mode
 3. Pull components out of deckbrowsersrceen
 4. Test algorithms thoroughly
-5. Troubleshoot the "(Highest rank: __)" on the stats page
+5. Troubleshoot the "(Highest rank: \_\_)" on the stats page
 6. Update the reading and flashcard variable names to dynamic practic and common phrases in the sentences tab, also update the stats page to reflect changes
 7. Check if plurals and accusatives are being counted towards the base words or not, can't remember
+8. Get gesture handler working (had to use panresponder bc of issues)
+9. Change 0m due date to now or due
+10.

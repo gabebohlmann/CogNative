@@ -2,7 +2,7 @@
 import { StyleSheet } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import DeckBrowser from "@/components/DeckBrowserScreen";
-import { ScrollView } from "react-native-gesture-handler";            
+import { ScrollView } from "react-native";
 
 export default function DeckBrowserTabScreen() {
   return (

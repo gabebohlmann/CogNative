@@ -2,7 +2,9 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { FlashcardPlayer } from "./FlashcardPlayer"; // Import the new player
+import { FlashcardPlayer } from "./FlashcardPlayer";
+import { ScrollView, View } from "react-native";
+import { StyleSheet } from "react-native";
 
 export default function WordsScreen() {
   const [cards, setCards] = useState<any[] | null>(null);
@@ -44,10 +46,8 @@ export default function WordsScreen() {
     if (!cards || cards.length === 0 || !settings) return;
     const currentCard = cards[0];
 
-    // Optimistic update
     setCards((currentCards) => (currentCards ? currentCards.slice(1) : []));
 
-    // Send to backend
     gradeWord({ wordText: currentCard.esperanto, rating, settings }).catch(
       (err) => console.error("Failed to save grade:", err)
     );
@@ -64,11 +64,22 @@ export default function WordsScreen() {
       : null;
 
   return (
-    <FlashcardPlayer
-      isLoading={isLoading}
-      isDone={!isLoading && !currentCard}
-      card={currentCard}
-      onGrade={handleGradeWord}
-    />
+    <View style={styles.container}>
+      <FlashcardPlayer
+        isLoading={isLoading}
+        isDone={!isLoading && !currentCard}
+        card={currentCard}
+        onGrade={handleGradeWord}
+      />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({  
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    height: "100%",
+  },
+});

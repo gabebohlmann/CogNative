@@ -1,15 +1,7 @@
 // app/(tabs)/index.tsx
-import { ActivityIndicator, Image, StyleSheet } from 'react-native';
-
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedView } from '@/components/ThemedView';
-import React from 'react';
-import Ionicons from "@expo/vector-icons/Ionicons";
-import Button from "@/components/Button";
-import { router } from 'expo-router';
-import Flashcard from "@/components/Flashcard";
+import { StyleSheet } from 'react-native';
 import WordsScreen from '@/components/WordsScreen';
-import { ScrollView } from 'react-native-gesture-handler';
+import { ScrollView } from "react-native";
 
 export default function HomeScreen() {
   return (
