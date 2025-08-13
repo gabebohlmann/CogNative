@@ -1,3 +1,4 @@
+// components/SentencesScreen.tsx
 import React, {
   useState,
   useMemo,
@@ -298,7 +299,7 @@ export default function SentencesScreen() {
               mode === "reading" && styles.activeButtonText,
             ]}
           >
-            Reading
+            Dynamic Practice
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -314,7 +315,7 @@ export default function SentencesScreen() {
               mode === "flashcard" && styles.activeButtonText,
             ]}
           >
-            Flashcards
+            Common Phrases
           </Text>
         </TouchableOpacity>
       </View>

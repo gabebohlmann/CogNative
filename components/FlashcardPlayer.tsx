@@ -1,52 +1,29 @@
 // components/FlashcardPlayer.tsx
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Animated,
   ActivityIndicator,
 } from "react-native";
 
 export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
   const [isFlipped, setIsFlipped] = useState(false);
-  const [flipAnimation] = useState(new Animated.Value(0));
 
   useEffect(() => {
-    // Reset flip animation when a new card is shown
     setIsFlipped(false);
-    flipAnimation.setValue(0);
   }, [card]);
 
-  const { frontAnimatedStyle, backAnimatedStyle } = useMemo(() => {
-    const frontInterpolate = flipAnimation.interpolate({
-      inputRange: [0, 180],
-      outputRange: ["0deg", "180deg"],
-    });
-    const backInterpolate = flipAnimation.interpolate({
-      inputRange: [0, 180],
-      outputRange: ["180deg", "360deg"],
-    });
-    return {
-      frontAnimatedStyle: { transform: [{ rotateY: frontInterpolate }] },
-      backAnimatedStyle: { transform: [{ rotateY: backInterpolate }] },
-    };
-  }, [flipAnimation]);
-
   const handleFlip = () => {
-    Animated.timing(flipAnimation, {
-      toValue: isFlipped ? 0 : 180,
-      duration: 600,
-      useNativeDriver: false,
-    }).start(() => setIsFlipped(!isFlipped));
+    setIsFlipped((prev) => !prev);
   };
 
   if (isLoading) {
-    return <ActivityIndicator style={{ flex: 1 }} size="large" />;
+    return <ActivityIndicator style={styles.container} size="large" />;
   }
 
-  if (isDone) {
+  if (isDone || !card) {
     return (
       <View style={styles.container}>
         <Text style={styles.cardText}>🎉</Text>
@@ -57,20 +34,34 @@ export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
 
   return (
     <View style={styles.container}>
-      <View>
-        <Animated.View style={[styles.card, frontAnimatedStyle]}>
-          <Text style={styles.cardText}>{card.front}</Text>
-        </Animated.View>
-        <Animated.View
-          style={[styles.card, styles.cardBack, backAnimatedStyle]}
-        >
-          <Text style={styles.cardText}>{card.back}</Text>
-        </Animated.View>
+      <View style={styles.card}>
+        {isFlipped ? (
+          <>
+            {/* MODIFICATION: Use a smaller, de-emphasized style for the front when flipped */}
+            <Text style={[styles.cardText, styles.flippedFrontText]}>
+              {card.front}
+            </Text>
+            <View style={styles.divider} />
+            {/* MODIFICATION: Use the new, bigger, bolder style for the back */}
+            <Text style={[styles.cardText, styles.cardBackText]}>
+              {card.back}
+            </Text>
+          </>
+        ) : (
+          <Text
+            style={[
+              styles.cardText,
+              card.front?.length > 80 && styles.cardTextSmall,
+            ]}
+          >
+            {card.front}
+          </Text>
+        )}
       </View>
 
       <TouchableOpacity style={styles.flipButton} onPress={handleFlip}>
         <Text style={styles.flipButtonText}>
-          {isFlipped ? "Show Question" : "Show Answer"}
+          {isFlipped ? "Hide Answer" : "Show Answer"}
         </Text>
       </TouchableOpacity>
 
@@ -120,24 +111,43 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 10, fontSize: 18, color: "#333" },
   card: {
     width: 320,
-    height: 200,
+    minHeight: 200,
     backgroundColor: "white",
     borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    backfaceVisibility: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    padding: 20,
   },
-  cardBack: { position: "absolute", top: 0 },
   cardText: {
     fontSize: 28,
     fontWeight: "bold",
     textAlign: "center",
-    padding: 10,
+  },
+  cardTextSmall: {
+    fontSize: 20,
+  },
+  // --- NEW: Style for the front text when card is flipped ---
+  flippedFrontText: {
+    fontSize: 20,
+    fontWeight: "500",
+    color: "#666",
+  },
+  // --- MODIFIED: Style for the back text to make it bigger and bolder ---
+  cardBackText: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#000",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#e0e0e0",
+    width: "80%",
+    marginVertical: 15,
   },
   flipButton: {
     marginTop: 30,
@@ -168,3 +178,4 @@ const styles = StyleSheet.create({
   goodButton: { backgroundColor: "#28a745" },
   easyButton: { backgroundColor: "#17a2b8" },
 });
+export default FlashcardPlayer;

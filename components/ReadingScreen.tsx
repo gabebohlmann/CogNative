@@ -1,3 +1,4 @@
+// components/ReadingScreen.tsx
 import React, {
   useState,
   useRef,
