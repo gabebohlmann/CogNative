@@ -1,3 +1,4 @@
+// convex/userWords.ts
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import {
@@ -222,4 +223,4 @@ export const getTranslationsForStory = query({
     return translations;
   },
 });
-  
+    

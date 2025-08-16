@@ -9,4 +9,4 @@
 7. Check if plurals and accusatives are being counted towards the base words or not, can't remember
 8. Get gesture handler working (had to use panresponder bc of issues)
 9. Change 0m due date to now or due
-10.
+10. Add a pronunciation/fluency assesment API tool with chatbot for voice mode with MS Speech Services pronunciation assesment, SpeechAce, SpeechSuper,  or ELSA Speak

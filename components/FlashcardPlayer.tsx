@@ -1,28 +1,15 @@
 // components/FlashcardPlayer.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import {
-  View,
-  Text,
+  GestureDetector,
+  Gesture,
   TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  PanResponder,
-} from "react-native";
+} from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 
 export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
   const [isFlipped, setIsFlipped] = useState(false);
-
-  // Use refs to give the PanResponder access to the latest state and props
-  const isFlippedRef = useRef(isFlipped);
-  useEffect(() => {
-    isFlippedRef.current = isFlipped;
-  }, [isFlipped]);
-
-  // --- NEW: Create a ref to hold the latest onGrade function ---
-  const onGradeRef = useRef(onGrade);
-  useEffect(() => {
-    onGradeRef.current = onGrade;
-  }, [onGrade]);
 
   useEffect(() => {
     setIsFlipped(false);
@@ -32,43 +19,45 @@ export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
     setIsFlipped((prev) => !prev);
   };
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => isFlippedRef.current,
-      onMoveShouldSetPanResponder: () => isFlippedRef.current,
-      onPanResponderRelease: (evt, gestureState) => {
-        const { dx, dy } = gestureState;
-        const swipeThreshold = 50;
+  const tapGesture = Gesture.Tap().onEnd(() => {
+    runOnJS(handleFlip)();
+  });
 
-        // A helper to call the grade function from the ref
-        const grade = (rating) => {
-          if (onGradeRef.current) {
-            onGradeRef.current(rating);
-          }
-        };
+  const panGesture = Gesture.Pan()
+    .enabled(isFlipped)
+    .onEnd((e) => {
+      const { translationX, translationY } = e;
+      const swipeThreshold = 50;
 
-        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > swipeThreshold) {
-          if (dx > 0) {
-            grade("good");
-          } else {
-            grade("again");
-          }
-        } else if (
-          Math.abs(dy) > Math.abs(dx) &&
-          Math.abs(dy) > swipeThreshold
-        ) {
-          if (dy > 0) {
-            grade("hard");
-          } else {
-            grade("easy");
-          }
+      if (
+        Math.abs(translationX) > Math.abs(translationY) &&
+        Math.abs(translationX) > swipeThreshold
+      ) {
+        if (translationX > 0) {
+          runOnJS(onGrade)("good");
+        } else {
+          runOnJS(onGrade)("again");
         }
-      },
-    })
-  ).current;
+      } else if (
+        Math.abs(translationY) > Math.abs(translationX) &&
+        Math.abs(translationY) > swipeThreshold
+      ) {
+        if (translationY > 0) {
+          runOnJS(onGrade)("hard");
+        } else {
+          runOnJS(onGrade)("easy");
+        }
+      }
+    });
+
+  const composedGesture = Gesture.Exclusive(panGesture, tapGesture);
 
   if (isLoading) {
-    return <ActivityIndicator style={styles.container} size="large" />;
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
   }
 
   if (isDone || !card) {
@@ -81,69 +70,74 @@ export const FlashcardPlayer = ({ card, onGrade, isLoading, isDone }) => {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card} {...panResponder.panHandlers}>
-        {isFlipped ? (
-          <>
-            <Text style={[styles.cardText, styles.flippedFrontText]}>
+    <GestureDetector gesture={composedGesture}>
+      <View style={styles.container}>
+        <View style={styles.card}>
+          {isFlipped ? (
+            <>
+              <Text style={[styles.cardText, styles.flippedFrontText]}>
+                {card.front}
+              </Text>
+              <View style={styles.divider} />
+              <Text style={[styles.cardText, styles.cardBackText]}>
+                {card.back}
+              </Text>
+            </>
+          ) : (
+            <Text
+              style={[
+                styles.cardText,
+                card.front?.length > 80 && styles.cardTextSmall,
+              ]}
+            >
               {card.front}
             </Text>
-            <View style={styles.divider} />
-            <Text style={[styles.cardText, styles.cardBackText]}>
-              {card.back}
+          )}
+        </View>
+
+        {/* ✅ FIX: Wrap the conflicting button in its own GestureDetector */}
+        <GestureDetector gesture={Gesture.Tap()}>
+          <TouchableOpacity style={styles.flipButton} onPress={handleFlip}>
+            <Text style={styles.flipButtonText}>
+              {isFlipped ? "Hide Answer" : "Show Answer"}
             </Text>
-          </>
-        ) : (
-          <Text
-            style={[
-              styles.cardText,
-              card.front?.length > 80 && styles.cardTextSmall,
-            ]}
-          >
-            {card.front}
-          </Text>
+          </TouchableOpacity>
+        </GestureDetector>
+
+        {isFlipped && card.intervals && (
+          <View style={styles.feedbackContainer}>
+            <TouchableOpacity
+              style={[styles.feedbackButton, styles.againButton]}
+              onPress={() => onGrade("again")}
+            >
+              <Text style={styles.feedbackButtonText}>Again</Text>
+              <Text style={styles.intervalText}>{card.intervals.again}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.feedbackButton, styles.hardButton]}
+              onPress={() => onGrade("hard")}
+            >
+              <Text style={styles.feedbackButtonText}>Hard</Text>
+              <Text style={styles.intervalText}>{card.intervals.hard}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.feedbackButton, styles.goodButton]}
+              onPress={() => onGrade("good")}
+            >
+              <Text style={styles.feedbackButtonText}>Good</Text>
+              <Text style={styles.intervalText}>{card.intervals.good}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.feedbackButton, styles.easyButton]}
+              onPress={() => onGrade("easy")}
+            >
+              <Text style={styles.feedbackButtonText}>Easy</Text>
+              <Text style={styles.intervalText}>{card.intervals.easy}</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
-
-      <TouchableOpacity style={styles.flipButton} onPress={handleFlip}>
-        <Text style={styles.flipButtonText}>
-          {isFlipped ? "Hide Answer" : "Show Answer"}
-        </Text>
-      </TouchableOpacity>
-
-      {isFlipped && card.intervals && (
-        <View style={styles.feedbackContainer}>
-          <TouchableOpacity
-            style={[styles.feedbackButton, styles.againButton]}
-            onPress={() => onGrade("again")}
-          >
-            <Text style={styles.feedbackButtonText}>Again</Text>
-            <Text style={styles.intervalText}>{card.intervals.again}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.feedbackButton, styles.hardButton]}
-            onPress={() => onGrade("hard")}
-          >
-            <Text style={styles.feedbackButtonText}>Hard</Text>
-            <Text style={styles.intervalText}>{card.intervals.hard}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.feedbackButton, styles.goodButton]}
-            onPress={() => onGrade("good")}
-          >
-            <Text style={styles.feedbackButtonText}>Good</Text>
-            <Text style={styles.intervalText}>{card.intervals.good}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.feedbackButton, styles.easyButton]}
-            onPress={() => onGrade("easy")}
-          >
-            <Text style={styles.feedbackButtonText}>Easy</Text>
-            <Text style={styles.intervalText}>{card.intervals.easy}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
+    </GestureDetector>
   );
 };
 
@@ -153,11 +147,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#f0f4f8",
+    width: "100%",
   },
   loadingText: { marginTop: 10, fontSize: 18, color: "#333" },
   card: {
     width: 320,
-    minHeight: 450,
+    minHeight: 200,
     backgroundColor: "white",
     borderRadius: 16,
     justifyContent: "center",
@@ -169,24 +164,10 @@ const styles = StyleSheet.create({
     elevation: 3,
     padding: 20,
   },
-  cardText: {
-    fontSize: 28,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  cardTextSmall: {
-    fontSize: 20,
-  },
-  flippedFrontText: {
-    fontSize: 20,
-    fontWeight: "500",
-    color: "#666",
-  },
-  cardBackText: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#000",
-  },
+  cardText: { fontSize: 28, fontWeight: "bold", textAlign: "center" },
+  cardTextSmall: { fontSize: 20 },
+  flippedFrontText: { fontSize: 20, fontWeight: "500", color: "#666" },
+  cardBackText: { fontSize: 32, fontWeight: "bold", color: "#000" },
   divider: {
     height: 1,
     backgroundColor: "#e0e0e0",
