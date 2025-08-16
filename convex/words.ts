@@ -132,13 +132,11 @@ export const getRandomWord = query({
 });
 
 export const getWordsForGame = query({
-  // Add gameId to args to allow refetching new words
   args: { settings: v.any(), gameId: v.number() },
   handler: async (ctx, { settings }) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("User not authenticated.");
-    }
+    if (!identity) throw new Error("User not authenticated.");
+
     const user = await ctx.db
       .query("users")
       .withIndex("by_token", (q) =>
@@ -146,13 +144,11 @@ export const getWordsForGame = query({
       )
       .unique();
 
-    if (!user) {
-      throw new Error("User not found.");
-    }
+    if (!user) throw new Error("User not found.");
 
     const now = new Date();
     const maxWordsInGame = 5;
-    const maxUniqueLetters = 7; // The new limit
+    const maxTotalLetters = 7; // The crucial limit for TOTAL letters
 
     // 1. Get a large pool of potential words (due + new)
     const dueUserWords = await ctx.db
@@ -161,12 +157,10 @@ export const getWordsForGame = query({
       .filter((q) => q.lte("due", now.getTime()))
       .take(100);
 
-    // Fetch the full documents for due words
     const dueWordDocs = (
       await Promise.all(dueUserWords.map((uw) => ctx.db.get(uw.wordId)))
     ).filter((doc) => doc !== null);
 
-    // Get new/unseen words
     const seenWordIds = new Set(
       (
         await ctx.db
@@ -180,31 +174,49 @@ export const getWordsForGame = query({
       (w) => !seenWordIds.has(w._id.toString())
     );
 
-    // Combine and shuffle the entire pool of potential words
     let potentialWords = [...dueWordDocs, ...unseenWords].sort(
       () => 0.5 - Math.random()
     );
 
-    // 2. Intelligently select words that fit within the letter limit
-    const gameWords = [];
-    const uniqueLetters = new Set();
+    // 2. Intelligently select a set of words that fits the 7-letter constraint
+    let gameWords = [];
 
     for (const word of potentialWords) {
-      // Stop if we have enough words for the game
-      if (gameWords.length >= maxWordsInGame) break;
+      // Tentatively add the new word to see if it fits
+      const tentativeGameWords = [
+        ...gameWords,
+        { esperanto: word.esperanto, english: word.english },
+      ];
 
-      const wordLetters = new Set(word.esperanto.split(""));
-      const combinedLetters = new Set([...uniqueLetters, ...wordLetters]);
+      // Recalculate what the letter scape would be with this new word included
+      const maxFrequencies = {};
+      tentativeGameWords.forEach((gw) => {
+        const wordFrequencies = {};
+        for (const letter of gw.esperanto) {
+          wordFrequencies[letter] = (wordFrequencies[letter] || 0) + 1;
+        }
+        for (const letter in wordFrequencies) {
+          if (
+            !maxFrequencies[letter] ||
+            wordFrequencies[letter] > maxFrequencies[letter]
+          ) {
+            maxFrequencies[letter] = wordFrequencies[letter];
+          }
+        }
+      });
 
-      // Check if adding this word would exceed the letter limit
-      if (combinedLetters.size <= maxUniqueLetters) {
-        gameWords.push({
-          esperanto: word.esperanto,
-          english: word.english,
-        });
-        // Add the new letters from the accepted word to our set
-        wordLetters.forEach((letter) => uniqueLetters.add(letter));
+      let totalLetters = 0;
+      for (const letter in maxFrequencies) {
+        totalLetters += maxFrequencies[letter];
       }
+
+      // If the total number of letters is within the limit, officially add the word
+      if (totalLetters <= maxTotalLetters) {
+        gameWords = tentativeGameWords;
+      }
+
+      // Stop when we have enough words for the game
+      if (gameWords.length >= maxWordsInGame) break;
     }
 
     // 3. Fallback if the logic can't find enough suitable words
@@ -221,4 +233,4 @@ export const getWordsForGame = query({
 
     return gameWords;
   },
-});
+});    
