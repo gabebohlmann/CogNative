@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { FlashcardPlayer } from "./FlashcardPlayer";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 import { StyleSheet } from "react-native";
 
 export default function WordsScreen() {
@@ -57,6 +57,8 @@ export default function WordsScreen() {
   const currentCard =
     !isLoading && cards && cards.length > 0
       ? {
+          // **FIX**: Pass the unique ID from the original card object
+          _id: cards[0]._id,
           front: cards[0].esperanto,
           back: cards[0].english,
           intervals: cards[0].intervals,
@@ -66,6 +68,8 @@ export default function WordsScreen() {
   return (
     <View style={styles.container}>
       <FlashcardPlayer
+        // **FIX**: Add the key prop to force a re-mount when the card changes
+        key={currentCard ? currentCard._id : "player-done"}
         isLoading={isLoading}
         isDone={!isLoading && !currentCard}
         card={currentCard}
@@ -75,7 +79,7 @@ export default function WordsScreen() {
   );
 }
 
-const styles = StyleSheet.create({  
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",

@@ -26,5 +26,5 @@
    - dialogu dive
    - tongue twister trials
    - rapid read
-   - choose your own adventure
+   - choose your own adventure      
    - Spelling Bee

@@ -16,3 +16,4 @@
 14. Add swiping back into wordcircle (causing crashes on mobile so switching to tap + submit)
 15. Move context out of /app
 16. Add file path aliases.
+17. Delete components/Flashcard.tsx (make sure everything is flashcardplayer now)
