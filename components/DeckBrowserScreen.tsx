@@ -1,16 +1,17 @@
+// components/DeckBrowserScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
-  useColorScheme,
   TouchableOpacity,
   TextInput,
 } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { FlashList } from "@shopify/flash-list";
+import { useColorScheme } from "@/context/ThemeContext";
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -40,14 +41,13 @@ const sentenceColumns = [
   { key: "due", title: "Due", flex: 1, isSortable: true },
   { key: "state", title: "State", flex: 1.2, isSortable: true },
   { key: "reps", title: "Reps", flex: 0.8, isSortable: true },
-  // --- MODIFICATION: Make these columns sortable ---
   { key: "rangeIndex", title: "Range", flex: 1, isSortable: true },
   { key: "freqIndex", title: "Freq", flex: 1, isSortable: true },
   { key: "avg_rank", title: "Avg Rank", flex: 1.2, isSortable: true },
 ];
 
-function WordCell({ item }) {
-  const styles = getStyles(useColorScheme());
+function WordCell({ item, colorScheme }) {
+  const styles = getStyles(colorScheme);
   return (
     <View>
       <Text style={styles.wordText}>{item.esperanto}</Text>
@@ -61,16 +61,18 @@ const TableView = ({
   data,
   sortConfig,
   requestSort,
+  colorScheme,
   estimatedItemSize = 60,
 }) => {
-  const styles = getStyles(useColorScheme());
+  const styles = getStyles(colorScheme);
 
   const getDirectionIndicator = (key) => {
     if (!sortConfig || sortConfig.key !== key) return null;
     return sortConfig.direction === "ascending" ? " ▲" : " ▼";
   };
 
-  const TableRow = React.memo(({ item, index }) => {
+  const TableRow = React.memo(({ item, index, colorScheme }) => {
+    const styles = getStyles(colorScheme);
     const isEvenRow = index % 2 === 0;
     return (
       <View style={[styles.tableRow, isEvenRow && styles.evenRow]}>
@@ -80,7 +82,7 @@ const TableView = ({
           if (CellRenderer) {
             return (
               <View key={column.key} style={cellStyle}>
-                <CellRenderer item={item} />
+                <CellRenderer item={item} colorScheme={colorScheme} />
               </View>
             );
           }
@@ -113,7 +115,11 @@ const TableView = ({
       </View>
       <FlashList
         data={data}
-        renderItem={({ item, index }) => <TableRow item={item} index={index} />}
+        renderItem={({ item, index }) => (
+          <TableRow item={item} index={index} colorScheme={colorScheme} />
+        )}
+        // **FIX**: Add the extraData prop to tell FlashList to re-render when the theme changes.
+        extraData={colorScheme}
         estimatedItemSize={estimatedItemSize}
         keyExtractor={(item) => item._id}
         ListEmptyComponent={() => (
@@ -132,6 +138,8 @@ export default function DeckBrowserScreen() {
   });
   const [filterText, setFilterText] = useState("");
   const debouncedFilter = useDebounce(filterText, 300);
+  const { colorScheme } = useColorScheme();
+  const styles = getStyles(colorScheme);
 
   const deckWords = useQuery(api.deck.getDeckWords, {
     sortBy: sortConfig.key,
@@ -144,8 +152,6 @@ export default function DeckBrowserScreen() {
     sortBy: sortConfig.key,
     sortDirection: sortConfig.direction,
   });
-
-  const styles = getStyles(useColorScheme());
 
   const handleSort = useCallback((key: string) => {
     setSortConfig((current) => ({
@@ -167,6 +173,7 @@ export default function DeckBrowserScreen() {
           data={deckWords}
           sortConfig={sortConfig}
           requestSort={handleSort}
+          colorScheme={colorScheme}
         />
       );
     } else {
@@ -178,6 +185,7 @@ export default function DeckBrowserScreen() {
           data={seenSentences}
           sortConfig={sortConfig}
           requestSort={handleSort}
+          colorScheme={colorScheme}
         />
       );
     }

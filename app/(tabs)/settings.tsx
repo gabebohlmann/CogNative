@@ -20,13 +20,16 @@ export default function SettingsScreen() {
   return (
     <ScrollView>
       <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Settings</ThemedText>
-        <ThemedText type="defaultSemiBold">
-          Signed in as {user?.emailAddresses[0].emailAddress}.
-        </ThemedText>
+        {/* <ThemedText type="title">Settings</ThemedText> */}
       </ThemedView>
       <CardSettings />
-      <Button onPress={onSignOutPress}>Sign out</Button>
+      <ThemedText
+        style={{ textAlign: "center", paddingBottom: 20 }}
+        type="defaultSemiBold"
+      >
+        Signed in as {user?.emailAddresses[0].emailAddress}.
+      </ThemedText>
+      <Button style={{ width: "100%", padding: 30 }} onPress={onSignOutPress}>Sign out</Button>
     </ScrollView>
   );
 }

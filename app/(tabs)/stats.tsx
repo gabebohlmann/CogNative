@@ -12,7 +12,7 @@ export default function StatsTabScreen() {
   return (
     <ScrollView>
       <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Statistics</ThemedText>
+        {/* <ThemedText type="title">Statistics</ThemedText> */}
       </ThemedView>
       <StatsScreen />
     </ScrollView>

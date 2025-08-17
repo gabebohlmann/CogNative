@@ -1,37 +1,38 @@
-import React, { forwardRef } from "react";
-import { Pressable, Text, useColorScheme } from "react-native";
+// components/GradedWord.tsx
+import React from "react";
+import { Pressable, Text, StyleSheet } from "react-native";
 
-const GRADE_COLORS = {
-  again: "#dc3545",
-  hard: "#ffc107",
-  good: "#28a745", // A green for 'good'
-  easy: "#17a2b8",
-};
-
-export type GradeKey = "again" | "hard" | "good" | "easy" | "default";
+export type GradeKey = "default" | "again" | "hard" | "good" | "easy";
 
 interface GradedWordProps {
   word: string;
+  onPress: () => void;
+  grade: GradeKey;
   fontSize: number;
-  onPress: () => void; // Simple click handler
-  grade: GradeKey; // Receives its grade as a prop
+  colorScheme: "light" | "dark"; // Accept the color scheme
 }
 
-const GradedWordComponent = (
-  { word, fontSize, onPress, grade }: GradedWordProps,
-  ref: React.Ref<Pressable>
-) => {
-  const colorScheme = useColorScheme();
-  const defaultTextColor = colorScheme === "dark" ? "#FFF" : "#000";
+export const GradedWord = React.forwardRef<Pressable, GradedWordProps>(
+  ({ word, onPress, grade, fontSize, colorScheme }, ref) => {
+    const isDark = colorScheme === "dark";
 
-  // The color is determined entirely by the `grade` prop.
-  const targetColor = GRADE_COLORS[grade] || defaultTextColor;
+    // Define text color based on the theme
+    const textColor = isDark ? "#FFFFFF" : "#000000";
 
-  return (
-    <Pressable ref={ref} onPress={onPress}>
-      <Text style={{ color: targetColor, fontSize: fontSize }}>{word}</Text>
-    </Pressable>
-  );
-};
+    const gradeStyles: { [key in GradeKey]: object } = {
+      default: { color: textColor },
+      again: { backgroundColor: "rgba(220, 53, 69, 0.4)" },
+      hard: { backgroundColor: "rgba(255, 193, 7, 0.4)" },
+      good: { backgroundColor: "rgba(40, 167, 69, 0.4)" },
+      easy: { backgroundColor: "rgba(23, 162, 184, 0.4)" },
+    };
 
-export const GradedWord = React.memo(forwardRef(GradedWordComponent));
+    return (
+      <Pressable ref={ref} onPress={onPress}>
+        <Text style={[{ fontSize }, gradeStyles[grade], { color: textColor }]}>
+          {word}
+        </Text>
+      </Pressable>
+    );
+  }
+);

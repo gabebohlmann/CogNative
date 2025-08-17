@@ -14,3 +14,5 @@
 12. Fix fill in the blank on wordcircles and others to accept one of many options of a words definition
 13. Troubleshoot excetions to word order on WordCircles
 14. Add swiping back into wordcircle (causing crashes on mobile so switching to tap + submit)
+15. Move context out of /app
+16. Add file path aliases.

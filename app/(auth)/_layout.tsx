@@ -7,10 +7,8 @@ import React from 'react';
 
 import { TabBarIcon } from '@/components/navigation/TabBarIcon';
 import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function AuthRoutesLayout() {
-  const colorScheme = useColorScheme();
   const { isSignedIn } = useAuth()
 
   if (isSignedIn) {

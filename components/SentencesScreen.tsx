@@ -11,7 +11,6 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  useColorScheme,
   Pressable,
   TouchableOpacity,
 } from "react-native";
@@ -20,6 +19,7 @@ import { api } from "../convex/_generated/api";
 import { GradedWord, GradeKey } from "./GradedWord";
 import { Id } from "../convex/_generated/dataModel";
 import { FlashcardPlayer } from "./FlashcardPlayer";
+import { useColorScheme } from "../context/ThemeContext";
 
 interface SentenceState {
   grades: { [cleanedWord: string]: GradeKey };
@@ -34,7 +34,8 @@ const SentenceReadingView = ({
   onSubmit,
   wordRefs,
 }) => {
-  const styles = getStyles(useColorScheme());
+  const { colorScheme } = useColorScheme();
+  const styles = getStyles(colorScheme);
   const wordsInSentence = useMemo(
     () => sentence?.sentence.split(/(\s+|[.,!?;"'’“”])/) || [],
     [sentence]
@@ -66,6 +67,7 @@ const SentenceReadingView = ({
                 onPress={() => onWordClick(cleanedWord, wordKey)}
                 grade={grade}
                 fontSize={20}
+                colorScheme={colorScheme} // *** FIX: Pass colorScheme prop ***
               />
             );
           }
@@ -155,7 +157,7 @@ export default function SentencesScreen() {
   const gradeSentence = useMutation(api.sentences.gradeSentence);
   const markSentenceAsSeen = useMutation(api.sentences.markSentenceAsSeen);
   const convex = useConvex();
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useColorScheme();
 
   const wordRefs = useRef<{ [key: string]: Pressable | null }>({});
   const styles = getStyles(colorScheme);
@@ -335,6 +337,8 @@ export default function SentencesScreen() {
 const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
   const isDark = colorScheme === "dark";
   const textColor = isDark ? "#eee" : "#111";
+  const cardBgColor = isDark ? "#1e1e1e" : "#fff";
+  const containerBgColor = isDark ? "#000" : "#f0f4f8";
   const inactiveToggleBg = isDark ? "#2a2a2a" : "#e9ecef";
   const activeToggleBg = "#007bff";
   const popupBgColor = isDark
@@ -345,7 +349,7 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     container: {
       flex: 1,
       padding: 20,
-      backgroundColor: isDark ? "#121212" : "#f0f4f8",
+      backgroundColor: containerBgColor,
     },
     content: { flex: 1, justifyContent: "center" },
     title: {
@@ -356,7 +360,7 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       textAlign: "center",
     },
     card: {
-      backgroundColor: isDark ? "#2a2a2a" : "#fff",
+      backgroundColor: cardBgColor,
       borderRadius: 12,
       padding: 20,
       justifyContent: "space-between",
@@ -414,4 +418,3 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
     popupText: { color: "#fff", fontSize: 16, textAlign: "center" },
   });
 };
-            

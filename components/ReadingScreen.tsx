@@ -1,3 +1,4 @@
+// components/ReadingScreen.tsx
 import React, {
   useState,
   useRef,
@@ -9,7 +10,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  useColorScheme,
   View,
   Text as RNText,
   Pressable,
@@ -18,6 +18,8 @@ import {
 import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { GradedWord, GradeKey } from "./GradedWord";
+// import { useTheme } from "../context/ThemeContext";
+import { useColorScheme } from "@/context/ThemeContext"; 
 
 const getBaseWord = (word: string): string => {
   if (word.endsWith("jn")) return word.slice(0, -2);
@@ -44,7 +46,7 @@ interface WordInfo {
 }
 
 export default function ReadingScreen() {
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useColorScheme(); // CORRECTED HOOK USAGE
   const convex = useConvex();
   const [popup, setPopup] = useState({ visible: false, text: "", x: 0, y: 0 });
   const [translationCache, setTranslationCache] = useState<{
@@ -310,6 +312,7 @@ export default function ReadingScreen() {
                   }
                   grade={grade}
                   fontSize={fontSize}
+                  colorScheme={colorScheme} // PASS THE PROP
                 />
               );
             }
@@ -357,7 +360,7 @@ const getStyles = (
     ? "rgba(50, 50, 50, 0.9)"
     : "rgba(30, 30, 30, 0.9)";
   const controlBgColor = isDark
-    ? "rgba(240, 240, 240, 0.8)"
+    ? "rgba(40, 40, 40, 0.8)"
     : "rgba(240, 240, 240, 0.8)";
   return StyleSheet.create({
     loading: {

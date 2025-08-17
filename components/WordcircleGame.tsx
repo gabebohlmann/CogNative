@@ -88,6 +88,7 @@ export const WordcircleGame = () => {
   const [nextGameId, setNextGameId] = useState(2);
   const [prefetchedWords, setPrefetchedWords] = useState(null);
   const loadedGameIdRef = useRef(0);
+  const translationInputRef = useRef(null); // Ref for the text input
 
   const settings = useQuery(api.users.getSettings);
   const gradeWord = useMutation(api.userWords.gradeWord);
@@ -129,6 +130,17 @@ export const WordcircleGame = () => {
       setPrefetchedWords(prefetchedData);
     }
   }, [prefetchedData]);
+
+  // Effect to focus the input when the modal opens
+  useEffect(() => {
+    if (modalVisible) {
+      // A short delay gives the modal animation time to finish
+      const timer = setTimeout(() => {
+        translationInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [modalVisible]);
 
   const allLetters = useMemo(() => {
     if (!levelWords || levelWords.length === 0) return [];
@@ -197,7 +209,6 @@ export const WordcircleGame = () => {
     const translatedWordInfo = wordToTranslate;
     setWordToTranslate(null);
 
-    // Mobile toast alert
     // Alert.alert(
     //   isCorrect ? "Correct!" : "Incorrect",
     //   `The correct translation for "${translatedWordInfo.esperanto}" is "${translatedWordInfo.english}". Your card has been updated.`
@@ -249,7 +260,7 @@ export const WordcircleGame = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Wordcircle</Text>
+      <Text style={styles.title}>Word Game</Text>
       <View style={styles.foundWordsContainer}>
         {levelWords.map((word, index) => {
           const wordStatus = foundWords[word.esperanto];
@@ -327,6 +338,7 @@ export const WordcircleGame = () => {
               "?
             </Text>
             <TextInput
+              ref={translationInputRef}
               style={styles.input}
               onChangeText={setTranslationInput}
               value={translationInput}
@@ -353,7 +365,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#f0f4f8",
-    paddingVertical: 0,
+    paddingVertical: 40,
     paddingHorizontal: 10,
     width: "100%",
   },
@@ -363,7 +375,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   title: {
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: "bold",
   },
   foundWordsContainer: {

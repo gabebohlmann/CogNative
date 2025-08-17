@@ -5,13 +5,11 @@ import React from "react";
 
 import { TabBarIcon } from "@/components/navigation/TabBarIcon";
 import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
 // Import the `useAuth` hook from Clerk
 import { useAuth } from "@clerk/clerk-expo";
 import { View } from "react-native";
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
 
   // Redirect if the user is not signed in
   const { isSignedIn } = useAuth();
@@ -22,7 +20,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
+        // tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
         headerShown: false,
       }}
     >

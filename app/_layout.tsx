@@ -3,7 +3,7 @@ import "react-native-gesture-handler";
 import {
   DarkTheme,
   DefaultTheme,
-  ThemeProvider,
+  ThemeProvider as NavigationThemeProvider,
 } from "@react-navigation/native";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
@@ -11,12 +11,14 @@ import * as SplashScreen from "expo-splash-screen";
 import React from "react";
 import "react-native-reanimated";
 
-import { useColorScheme } from "@/hooks/useColorScheme";
 import { ClerkLoaded, ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+
+// --- THEME IMPORTS ---
+import { CustomThemeProvider, useColorScheme } from "@/context/ThemeContext"; // Adjust path if needed
 
 const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
   unsavedChangesWarning: false,
@@ -56,8 +58,11 @@ const tokenCache = {
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
+// --- AppContent Component ---
+// This component now lives inside the context and determines the navigation theme.
+function AppContent() {
+  const { colorScheme } = useColorScheme(); // Use our custom hook
+
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
@@ -73,22 +78,31 @@ export default function RootLayout() {
   }
 
   return (
+    <NavigationThemeProvider
+      value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+    >
+      <Stack>
+        <Stack.Screen
+          name="(tabs)"
+          options={{ headerShown: false, gestureEnabled: false }}
+        />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+    </NavigationThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <ClerkLoaded>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <ThemeProvider
-              value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
-            >
-              <Stack>
-                <Stack.Screen
-                  name="(tabs)"
-                  options={{ headerShown: false, gestureEnabled: false }}
-                />
-                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                <Stack.Screen name="+not-found" />
-              </Stack>
-            </ThemeProvider>
+            {/* Wrap everything with your new CustomThemeProvider */}
+            <CustomThemeProvider>
+              <AppContent />
+            </CustomThemeProvider>
           </GestureHandlerRootView>
         </ClerkLoaded>
       </ConvexProviderWithClerk>

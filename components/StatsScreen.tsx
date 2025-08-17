@@ -1,27 +1,25 @@
 // components/StatsScreen.tsx
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  useColorScheme,
-} from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
+import { useColorScheme} from "@/context/ThemeContext";
 
 const StatRow = ({
   label,
   value,
   description,
   color,
+  colorScheme, // Accept colorScheme as a prop
 }: {
   label: string;
   value: number | string;
   description?: string;
   color?: string;
+  colorScheme: "light" | "dark"; // Define the type for the prop
 }) => {
-  const styles = getStyles(useColorScheme());
+  // Use the passed-in prop to get styles
+  const styles = getStyles(colorScheme);
   return (
     <View style={styles.statRow}>
       <View style={styles.statLabelContainer}>
@@ -41,7 +39,7 @@ const StatRow = ({
 
 export default function StatsScreen() {
   const stats = useQuery(api.stats.getStats);
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useColorScheme(); // Use the correct hook from context
   const styles = getStyles(colorScheme);
 
   if (stats === undefined) {
@@ -64,12 +62,14 @@ export default function StatsScreen() {
         <StatRow
           label="New Words Today"
           value={stats.newToday}
-          color="#17a2b8"
+          color={styles.newColor.color} // Use theme-aware color
+          colorScheme={colorScheme} // Pass the theme down
         />
         <StatRow
           label="Reviews Due Today"
           value={stats.dueToday}
-          color="#28a745"
+          color={styles.dueColor.color} // Use theme-aware color
+          colorScheme={colorScheme} // Pass the theme down
         />
       </View>
 
@@ -79,25 +79,31 @@ export default function StatsScreen() {
           label="Words: Learning"
           value={stats.learning}
           description="Words in short-term steps."
+          colorScheme={colorScheme} // Pass the theme down
         />
         <StatRow
           label="Words: Learned"
           value={stats.learned}
           description="Words in long-term review."
+          colorScheme={colorScheme} // Pass the theme down
         />
         <View style={styles.divider} />
-        <StatRow label="Total Known Words" value={stats.totalKnown} />
-
-        {/* --- MODIFICATION: Updated Sentence Stats --- */}
+        <StatRow
+          label="Total Known Words"
+          value={stats.totalKnown}
+          colorScheme={colorScheme} // Pass the theme down
+        />
         <StatRow
           label="# of most common phrases learned"
           value={stats.sentencesLearnedFlashcard}
           description={`(Highest rank: ${stats.sentencesLearnedRank})`}
+          colorScheme={colorScheme} // Pass the theme down
         />
         <StatRow
           label="Total Sentences Seen"
           value={stats.totalSentencesSeen}
           description="(Reading & Flashcard modes)"
+          colorScheme={colorScheme} // Pass the theme down
         />
       </View>
     </View>
@@ -106,16 +112,21 @@ export default function StatsScreen() {
 
 const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
   const isDark = colorScheme === "dark";
-  const cardBackgroundColor = isDark ? "#2a2a2a" : "#fff";
+  const cardBackgroundColor = isDark ? "#1e1e1e" : "#fff";
+  const backgroundColor = isDark ? "#000" : "#f0f4f8";
   const textColor = isDark ? "#eee" : "#111";
   const secondaryTextColor = isDark ? "#aaa" : "#666";
-  const dividerColor = isDark ? "#444" : "#eee";
+  const dividerColor = isDark ? "#333" : "#eee";
+
+  // Define theme-aware colors for stats
+  const newColor = isDark ? "#20c997" : "#17a2b8"; // Teal colors
+  const dueColor = isDark ? "#32cd32" : "#28a745"; // Green colors
 
   return StyleSheet.create({
     container: {
       flex: 1,
       padding: 20,
-      backgroundColor: isDark ? "#121212" : "#f0f4f8",
+      backgroundColor: backgroundColor,
     },
     title: {
       fontSize: 28,
@@ -172,6 +183,13 @@ const getStyles = (colorScheme: "light" | "dark" | null | undefined) => {
       backgroundColor: dividerColor,
       marginHorizontal: -20,
       marginVertical: 5,
+    },
+    // Add color styles to be accessed directly
+    newColor: {
+      color: newColor,
+    },
+    dueColor: {
+      color: dueColor,
     },
   });
 };
