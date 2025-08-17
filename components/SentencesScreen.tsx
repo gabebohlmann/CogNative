@@ -286,7 +286,7 @@ export default function SentencesScreen() {
 
   return (
     <View style={styles.container} onTouchStart={handlePressOutside}>
-      <Text style={styles.title}>Sentences Practice</Text>
+      <Text style={styles.title}>Phrases Practice</Text>
       <View style={styles.toggleContainer}>
         <TouchableOpacity
           onPress={() => setMode("reading")}
