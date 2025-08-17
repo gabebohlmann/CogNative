@@ -49,6 +49,20 @@ async function getUser(ctx: any) {
     .unique();
 }
 
+const shuffleArray = (array) => {
+  let currentIndex = array.length,
+    randomIndex;
+  while (currentIndex !== 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [
+      array[randomIndex],
+      array[currentIndex],
+    ];
+  }
+  return array;
+};
+
 // --- Main Queries ---
 export const getDueCards = query({
   args: { settings: v.any() },
@@ -148,9 +162,11 @@ export const getWordsForGame = query({
 
     const now = new Date();
     const maxWordsInGame = 5;
-    const maxTotalLetters = 7; // The crucial limit for TOTAL letters
+    const maxTotalLetters = 7;
 
-    // 1. Get a large pool of potential words (due + new)
+    // 1. Get a pool of potential words, starting with the highest priority.
+
+    // Priority 1: Due cards
     const dueUserWords = await ctx.db
       .query("userWords")
       .withIndex("by_user_due_date", (q) => q.eq("userId", user._id))
@@ -161,6 +177,7 @@ export const getWordsForGame = query({
       await Promise.all(dueUserWords.map((uw) => ctx.db.get(uw.wordId)))
     ).filter((doc) => doc !== null);
 
+    // Priority 2: New cards, sorted by rangeIndex
     const seenWordIds = new Set(
       (
         await ctx.db
@@ -170,18 +187,27 @@ export const getWordsForGame = query({
       ).map((uw) => uw.wordId.toString())
     );
     const allWords = await ctx.db.query("words").collect();
-    const unseenWords = allWords.filter(
-      (w) => !seenWordIds.has(w._id.toString())
+
+    const unseenWords = allWords
+      .filter((w) => !seenWordIds.has(w._id.toString()))
+      // Sort new words by rangeIndex to prioritize the earliest ones
+      .sort((a, b) => (a.rangeIndex || 99999) - (b.rangeIndex || 99999));
+
+    const potentialWords = [...dueWordDocs, ...unseenWords].filter(
+      (word) => word.esperanto.length > 1
     );
 
-    let potentialWords = [...dueWordDocs, ...unseenWords].sort(
-      () => 0.5 - Math.random()
-    );
+    // *** FIX: Introduce controlled randomness to generate a new game each time ***
+    // Shuffle the top 50 priority words to ensure variety, while still respecting priority.
+    const topPriority = potentialWords.slice(0, 50);
+    const theRest = potentialWords.slice(50);
+    const randomizedPotentialWords = [...shuffleArray(topPriority), ...theRest];
 
     // 2. Intelligently select a set of words that fits the 7-letter constraint
     let gameWords = [];
 
-    for (const word of potentialWords) {
+    // Use the randomized list to build the game
+    for (const word of randomizedPotentialWords) {
       // Tentatively add the new word to see if it fits
       const tentativeGameWords = [
         ...gameWords,
@@ -224,7 +250,10 @@ export const getWordsForGame = query({
       console.warn(
         "Could not find enough words with the letter constraint. Using fallback."
       );
-      const randomWords = await ctx.db.query("words").take(maxWordsInGame);
+      const randomWords = await ctx.db
+        .query("words")
+        .filter((q) => q.gt(q.field("esperanto").length, 1))
+        .take(maxWordsInGame);
       return randomWords.map((w) => ({
         esperanto: w.esperanto,
         english: w.english,
@@ -233,4 +262,16 @@ export const getWordsForGame = query({
 
     return gameWords;
   },
-});    
+});
+export const resetCounters = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) throw new Error("User not found.");
+
+    await ctx.db.patch(user._id, {
+      newCardsSeenToday: 0,
+      lastResetDate: new Date().toISOString(),
+    });
+  },
+}); 

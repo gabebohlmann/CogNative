@@ -1,31 +1,28 @@
 // app/(tabs)/games.tsx
-import { StyleSheet } from 'react-native';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import MiniGamesScreen from '@/components/MiniGamesScreen';
-import { ScrollView } from 'react-native';
+import { StyleSheet, SafeAreaView } from "react-native";
+import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
+import GameSelectionScreen from "@/components/GameSelectionScreen"; // Import the new component
 
-export default function StatsTabScreen() {
-
+export default function GamesTabScreen() {
   return (
-    <ScrollView>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Games</ThemedText>
+    <SafeAreaView style={{ flex: 1 }}>
+      <ThemedView style={styles.container}>
+        <ThemedView style={styles.titleContainer}>
+          {/* <ThemedText type="title">Games</ThemedText> */}
+        </ThemedView>
+        <GameSelectionScreen />
       </ThemedView>
-      <MiniGamesScreen />
-    </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    paddingHorizontal: 16,
   },
   titleContainer: {
-    flexDirection: 'column',
-    gap: 8,
-  }
+    paddingVertical: 16,
+  },
 });

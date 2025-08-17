@@ -2,12 +2,12 @@
 // components/MinigamesScreen.tsx
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import { WordscapeGame } from "./WordscapeGame";
+import { WordcircleGame } from "./WordcircleGame";
 
 export default function MinigamesScreen() {
   return (
     <View style={styles.container}>
-      <WordscapeGame />
+      <WordcircleGame />
     </View>
   );
 }

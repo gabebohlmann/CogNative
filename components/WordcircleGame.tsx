@@ -1,4 +1,5 @@
-// components/WordscapeGame.tsx
+// components/WordcircleGame.tsx
+
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
@@ -9,9 +10,10 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
-} from "react-native";  
+} from "react-native";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
+// Note: Gesture handler is no longer needed for the LetterCircle
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 
@@ -30,138 +32,86 @@ const shuffleArray = (array) => {
   return array;
 };
 
-const LetterCircle = ({ letters, onWordChange, onWordSubmit }) => {
-  const [selectedIndices, setSelectedIndices] = useState([]);
-  const [currentWord, setCurrentWord] = useState("");
-  const letterCircleRadius = 25; // Radius of the touchable area for each letter
-
+// --- Refactored LetterCircle for Tap Interaction ---
+const LetterCircle = ({ letters, onLetterTap, selectedIndices }) => {
   const letterPositions = useMemo(() => {
     if (letters.length === 0) return [];
     const angle = 360 / letters.length;
-    const radius = 100; // a suitable radius for the circle
+    const radius = 100;
     return letters.map((_, i) => ({
       x: radius * Math.cos((angle * i - 90) * (Math.PI / 180)),
       y: radius * Math.sin((angle * i - 90) * (Math.PI / 180)),
     }));
   }, [letters]);
 
-  // Helper function for hit detection during a drag gesture
-  const checkHit = (x, y) => {
-    // The gesture's coordinates are relative to the top-left of the circle's container.
-    // We adjust by the container's center (150, 150) to match the letter positions.
-    const adjustedX = x - 150;
-    const adjustedY = y - 150;
-
-    for (let i = 0; i < letterPositions.length; i++) {
-      const pos = letterPositions[i];
-      const distance = Math.sqrt(
-        Math.pow(adjustedX - pos.x, 2) + Math.pow(adjustedY - pos.y, 2)
-      );
-      if (distance < letterCircleRadius && !selectedIndices.includes(i)) {
-        return i; // Return the index of the hit letter
-      }
-    }
-    return -1; // No new letter was hit
-  };
-
-  // These functions are wrapped in runOnJS to be called from the gesture handler's worklet
-  const startWord = (index) => {
-    const newWord = letters[index];
-    setSelectedIndices([index]);
-    setCurrentWord(newWord);
-    onWordChange(newWord);
-  };
-
-  const updateWord = (index) => {
-    const newWord = currentWord + letters[index];
-    setSelectedIndices((prev) => [...prev, index]);
-    setCurrentWord(newWord);
-    onWordChange(newWord);
-  };
-
-  const endWord = () => {
-    if (currentWord) {
-      onWordSubmit(currentWord);
-    }
-    setSelectedIndices([]);
-    setCurrentWord("");
-    onWordChange("");
-  };
-
-  // This Pan gesture handler allows for dragging across the letters to form a word.
-  const panGesture = Gesture.Pan()
-    .onBegin((e) => {
-      const hitIndex = checkHit(e.x, e.y);
-      if (hitIndex > -1) {
-        runOnJS(startWord)(hitIndex);
-      }
-    })
-    .onUpdate((e) => {
-      const hitIndex = checkHit(e.x, e.y);
-      if (hitIndex > -1) {
-        runOnJS(updateWord)(hitIndex);
-      }
-    })
-    .onEnd(() => {
-      runOnJS(endWord)();
-    })
-    .minDistance(1);
-
   return (
-    <GestureDetector gesture={panGesture}>
-      <View style={styles.circleContainer}>
-        <View style={styles.letterWrapper}>
-          {letters.map((letter, index) => {
-            const pos = letterPositions[index];
-            return (
-              <View
-                key={index}
-                style={[
-                  styles.letter,
-                  {
-                    transform: [{ translateX: pos.x }, { translateY: pos.y }],
-                  },
-                  selectedIndices.includes(index) && styles.selectedLetter,
-                ]}
-              >
-                <Text style={styles.letterText}>{letter.toUpperCase()}</Text>
-              </View>
-            );
-          })}
-        </View>
+    <View style={styles.circleContainer}>
+      <View style={styles.letterWrapper}>
+        {letters.map((letter, index) => {
+          const isSelected = selectedIndices.includes(index);
+          return (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.letter,
+                {
+                  transform: [
+                    { translateX: letterPositions[index].x },
+                    { translateY: letterPositions[index].y },
+                  ],
+                },
+                isSelected && styles.selectedLetter,
+              ]}
+              onPress={() => onLetterTap(letter, index)}
+              disabled={isSelected} // Prevent tapping the same letter twice in a row
+            >
+              <Text style={styles.letterText}>{letter.toUpperCase()}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
-    </GestureDetector>
+    </View>
   );
 };
 
-export const WordscapeGame = () => {
-  // Store found words as an object to track their correctness status
+export const WordcircleGame = () => {
   const [foundWords, setFoundWords] = useState({});
   const [currentGuess, setCurrentGuess] = useState("");
+  const [currentIndices, setCurrentIndices] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [wordToTranslate, setWordToTranslate] = useState(null);
   const [translationInput, setTranslationInput] = useState("");
+  const [isLoadingNewLevel, setIsLoadingNewLevel] = useState(false);
 
-  // State to hold the words for the current level, preventing reloads on grade.
   const [levelWords, setLevelWords] = useState(null);
   const [gameId, setGameId] = useState(1);
-  const loadedGameIdRef = useRef(0); // Ref to track which gameId's words are loaded.
+  const [nextGameId, setNextGameId] = useState(2);
+  const [prefetchedWords, setPrefetchedWords] = useState(null);
+  const loadedGameIdRef = useRef(0);
 
   const settings = useQuery(api.users.getSettings);
   const gradeWord = useMutation(api.userWords.gradeWord);
 
-  // This query will refetch data in the background, but we'll control when the UI updates.
   const fetchedWords = useQuery(
     api.words.getWordsForGame,
     settings ? { settings, gameId } : "skip"
   );
 
-  // This effect ensures the level's words are only set when a new game starts.
+  const allWordsFound =
+    levelWords &&
+    levelWords.length > 0 &&
+    Object.keys(foundWords).length === levelWords.length;
+
+  const prefetchedData = useQuery(
+    api.words.getWordsForGame,
+    allWordsFound && settings ? { settings, gameId: nextGameId } : "skip"
+  );
+
   useEffect(() => {
-    // Only update the level's words if the fetch is for a new gameId.
     if (fetchedWords && gameId !== loadedGameIdRef.current) {
       setLevelWords(fetchedWords);
-      loadedGameIdRef.current = gameId; // Mark this gameId as loaded.
+      loadedGameIdRef.current = gameId;
+      setIsLoadingNewLevel(false);
       console.log(
         "Loaded words for game ID:",
         gameId,
@@ -170,18 +120,24 @@ export const WordscapeGame = () => {
     }
   }, [fetchedWords, gameId]);
 
+  useEffect(() => {
+    if (prefetchedData) {
+      console.log(
+        `Prefetched words for game ID ${nextGameId}:`,
+        prefetchedData.map((w) => w.esperanto)
+      );
+      setPrefetchedWords(prefetchedData);
+    }
+  }, [prefetchedData]);
+
   const allLetters = useMemo(() => {
     if (!levelWords || levelWords.length === 0) return [];
-
     const maxFrequencies = {};
-
-    // Determine the maximum required frequency for each letter across all words
     levelWords.forEach((word) => {
       const wordFrequencies = {};
       for (const letter of word.esperanto) {
         wordFrequencies[letter] = (wordFrequencies[letter] || 0) + 1;
       }
-
       for (const letter in wordFrequencies) {
         if (
           !maxFrequencies[letter] ||
@@ -191,20 +147,27 @@ export const WordscapeGame = () => {
         }
       }
     });
-
-    // Build the final letter array based on the calculated maximum frequencies
     const scapeLetters = [];
     for (const letter in maxFrequencies) {
       for (let i = 0; i < maxFrequencies[letter]; i++) {
         scapeLetters.push(letter);
       }
     }
-
     return shuffleArray(scapeLetters);
   }, [levelWords]);
 
-  const handleWordSubmit = (word) => {
-    // Check if the word is already found using the new state structure
+  const clearGuess = () => {
+    setCurrentGuess("");
+    setCurrentIndices([]);
+  };
+
+  const handleLetterTap = (letter, index) => {
+    setCurrentGuess((prev) => prev + letter);
+    setCurrentIndices((prev) => [...prev, index]);
+  };
+
+  const handleWordSubmit = () => {
+    const word = currentGuess;
     if (word.length > 1 && !foundWords.hasOwnProperty(word)) {
       const matchedWord = levelWords.find(
         (w) => w.esperanto.toLowerCase() === word.toLowerCase()
@@ -214,59 +177,67 @@ export const WordscapeGame = () => {
         setModalVisible(true);
       }
     }
-    setCurrentGuess("");
+    clearGuess();
   };
 
-  const handleTranslationSubmit = async () => {
+  const handleTranslationSubmit = () => {
     if (!wordToTranslate || !settings) return;
-
     const isCorrect =
       translationInput.trim().toLowerCase() ===
       wordToTranslate.english.toLowerCase();
     const rating = isCorrect ? "good" : "again";
 
-    console.log(
-      `[DB SEND] Submitting grade for "${wordToTranslate.esperanto}": ${rating}`
-    );
-    try {
-      // Await the mutation to ensure it completes before proceeding
-      const result = await gradeWord({
-        wordText: wordToTranslate.esperanto,
-        rating,
-        settings,
-      });
-      console.log("[DB RECEIVE] Grading successful, result:", result);
-    } catch (error) {
-      console.error("[DB ERROR] Failed to submit grade:", error);
-      Alert.alert("Error", "Could not save your progress. Please try again.");
-    }
-
-    // Add the word to the found list with its correctness status.
     setFoundWords((prev) => ({
       ...prev,
       [wordToTranslate.esperanto]: isCorrect ? "correct" : "incorrect",
     }));
-
-    // Close modal and reset input BEFORE showing the alert.
-    // This allows the UI to update in the background.
     setTranslationInput("");
     setModalVisible(false);
+
+    const translatedWordInfo = wordToTranslate;
     setWordToTranslate(null);
 
-    // Show the confirmation alert last.
-    Alert.alert(
-      isCorrect ? "Correct!" : "Incorrect",
-      `The correct translation for "${wordToTranslate.esperanto}" is "${wordToTranslate.english}". Your card has been updated.`
+    // Mobile toast alert
+    // Alert.alert(
+    //   isCorrect ? "Correct!" : "Incorrect",
+    //   `The correct translation for "${translatedWordInfo.esperanto}" is "${translatedWordInfo.english}". Your card has been updated.`
+    // );
+
+    console.log(
+      `[DB SEND] Submitting grade for "${translatedWordInfo.esperanto}": ${rating}`
     );
+    gradeWord({
+      wordText: translatedWordInfo.esperanto,
+      rating,
+      settings,
+    })
+      .then((result) => {
+        console.log(
+          "[DB RECEIVE] Background grading successful, result:",
+          result
+        );
+      })
+      .catch((error) => {
+        console.error("[DB ERROR] Background grade submission failed:", error);
+      });
   };
 
   const startNewGame = () => {
-    // Reset foundWords to an empty object for the new game
-    setFoundWords({});
-    setGameId((prevId) => prevId + 1);
+    if (prefetchedWords) {
+      setFoundWords({});
+      setLevelWords(prefetchedWords);
+      setGameId(nextGameId);
+      setNextGameId(nextGameId + 1);
+      setPrefetchedWords(null);
+      loadedGameIdRef.current = nextGameId;
+    } else {
+      setIsLoadingNewLevel(true);
+      setFoundWords({});
+      setGameId((prevId) => prevId + 1);
+      setNextGameId((prevId) => prevId + 2);
+    }
   };
 
-  // The loading state now depends on `levelWords` instead of the direct query result.
   if (!levelWords || !settings) {
     return (
       <View style={styles.centered}>
@@ -276,19 +247,13 @@ export const WordscapeGame = () => {
     );
   }
 
-  // Check if all words are found using the new state structure
-  const allWordsFound =
-    levelWords.length > 0 &&
-    Object.keys(foundWords).length === levelWords.length;
-
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Word Game</Text>
+      <Text style={styles.title}>Wordcircle</Text>
       <View style={styles.foundWordsContainer}>
         {levelWords.map((word, index) => {
           const wordStatus = foundWords[word.esperanto];
           const isFound = !!wordStatus;
-
           return (
             <View
               key={index}
@@ -300,7 +265,9 @@ export const WordscapeGame = () => {
                     : styles.incorrectWordBox),
               ]}
             >
-              <Text style={styles.wordBoxText}>
+              <Text
+                style={[styles.wordBoxText, isFound && styles.foundWordBoxText]}
+              >
                 {isFound
                   ? word.esperanto
                   : "_ ".repeat(word.esperanto.length).trim()}
@@ -309,30 +276,49 @@ export const WordscapeGame = () => {
           );
         })}
       </View>
-
-      {allWordsFound ? (
-        <View style={styles.centered}>
+      {isLoadingNewLevel ? (
+        <View style={styles.gameArea}>
+          <ActivityIndicator size="large" />
+          <Text style={{ marginTop: 10 }}>Loading next level...</Text>
+        </View>
+      ) : allWordsFound ? (
+        <View style={styles.gameArea}>
           <Text style={styles.congratsText}>🎉 Level Complete! 🎉</Text>
           <TouchableOpacity style={styles.newGameButton} onPress={startNewGame}>
             <Text style={styles.newGameButtonText}>Play Again</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <>
+        <View style={styles.gameArea}>
           <Text style={styles.currentGuess}>{currentGuess.toUpperCase()}</Text>
+
+          <View style={styles.actionButtonsContainer}>
+            <TouchableOpacity style={styles.actionButton} onPress={clearGuess}>
+              <Text style={styles.actionButtonText}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleWordSubmit}
+            >
+              <Text style={styles.actionButtonText}>Submit</Text>
+            </TouchableOpacity>
+          </View>
+
           <LetterCircle
             letters={allLetters}
-            onWordChange={setCurrentGuess}
-            onWordSubmit={handleWordSubmit}
+            onLetterTap={handleLetterTap}
+            selectedIndices={currentIndices}
           />
-        </>
+        </View>
       )}
-
       <Modal
         animationType="slide"
         transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => {
+          setModalVisible(false);
+          clearGuess(); // Clear guess if user closes modal
+        }}
       >
         <View style={styles.centeredView}>
           <View style={styles.modalView}>
@@ -367,7 +353,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#f0f4f8",
-    paddingVertical: 40,
+    paddingVertical: 0,
     paddingHorizontal: 10,
     width: "100%",
   },
@@ -377,7 +363,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   title: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: "bold",
   },
   foundWordsContainer: {
@@ -400,11 +386,20 @@ const styles = StyleSheet.create({
     color: "#333",
     letterSpacing: 2,
   },
+  foundWordBoxText: {
+    color: "#fff",
+  },
   correctWordBox: {
-    backgroundColor: "#4CAF50", // Green for correct
+    backgroundColor: "#4CAF50",
   },
   incorrectWordBox: {
-    backgroundColor: "#dc3545", // Red for incorrect
+    backgroundColor: "#dc3545",
+  },
+  gameArea: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
   },
   currentGuess: {
     fontSize: 28,
@@ -416,6 +411,24 @@ const styles = StyleSheet.create({
     borderColor: "#ccc",
     textAlign: "center",
     minWidth: 200,
+    marginBottom: 10,
+  },
+  actionButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: 250,
+    marginBottom: 10,
+  },
+  actionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    backgroundColor: "#6c757d",
+  },
+  actionButtonText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
   },
   circleContainer: {
     width: 300,
@@ -440,17 +453,16 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     justifyContent: "center",
     alignItems: "center",
-    margin: -25, // center the circle
+    margin: -25,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 3,
-    // The gesture handler now manages interactions, so this is a display-only component
-    pointerEvents: "none",
   },
   selectedLetter: {
-    backgroundColor: "#007bff",
+    backgroundColor: "#6c757d", // Grey out selected letters
+    opacity: 0.7,
   },
   letterText: {
     fontSize: 20,
